@@ -1,0 +1,121 @@
+{
+  "membershipPlans": [
+    {
+      "name": "Students",
+      "type": "student",
+      "pricing": {
+        "membershipFee": "₹1000",
+        "registrationCharges": null,
+        "duration": "Economic Year"
+      },
+      "features": {
+        "invitationPersonalMeetings": "Selective Events",
+        "invitationOnlineMeetings": "Yes",
+        "accessAssociateGroup": "Yes",
+        "accessMainGroup": null,
+        "companyListing": "Yes",
+        "advertisementOfficialGroups": null,
+        "webinarHosting": null,
+        "advertisementWebsite": null,
+        "discountEventSponsorship": null,
+        "discountExhibitionStalls": null
+      }
+    },
+    {
+      "name": "EPC Classic",
+      "type": "classic",
+      "pricing": {
+        "membershipFee": "₹2500",
+        "registrationCharges": null,
+        "duration": "Economic Year"
+      },
+      "features": {
+        "invitationPersonalMeetings": "Yes",
+        "invitationOnlineMeetings": "Yes",
+        "accessAssociateGroup": null,
+        "accessMainGroup": "Yes",
+        "companyListing": "Yes",
+        "advertisementOfficialGroups": "Add Charges",
+        "webinarHosting": "Add Charges",
+        "advertisementWebsite": "With Discounts",
+        "discountEventSponsorship": null,
+        "discountExhibitionStalls": null
+      }
+    },
+    {
+      "name": "Dealer /Distributor",
+      "type": "dealer",
+      "pricing": {
+        "membershipFee": "₹5000",
+        "registrationCharges": null,
+        "duration": "Economic Year"
+      },
+      "features": {
+        "invitationPersonalMeetings": "Yes",
+        "invitationOnlineMeetings": "Yes",
+        "accessAssociateGroup": null,
+        "accessMainGroup": "Yes",
+        "companyListing": "Yes",
+        "advertisementOfficialGroups": "3/Month",
+        "webinarHosting": "4/year",
+        "advertisementWebsite": "Yes",
+        "discountEventSponsorship": "Yes",
+        "discountExhibitionStalls": "Yes"
+      }
+    },
+    {
+      "name": "Corporate Silver",
+      "type": "silver",
+      "pricing": {
+        "membershipFee": "₹10000",
+        "registrationCharges": null,
+        "duration": "Economic Year"
+      },
+      "features": {
+        "invitationPersonalMeetings": "Yes",
+        "invitationOnlineMeetings": "Yes",
+        "accessAssociateGroup": null,
+        "accessMainGroup": "Yes",
+        "companyListing": "Yes",
+        "advertisementOfficialGroups": "4/Month",
+        "webinarHosting": "Yes",
+        "advertisementWebsite": "Yes",
+        "discountEventSponsorship": "Yes",
+        "discountExhibitionStalls": "Yes"
+      }
+    },
+    {
+      "name": "Corporate Gold",
+      "type": "gold",
+      "pricing": {
+        "membershipFee": "₹20000",
+        "registrationCharges": null,
+        "duration": "Economic Year"
+      },
+      "features": {
+        "invitationPersonalMeetings": "Yes",
+        "invitationOnlineMeetings": "Yes",
+        "accessAssociateGroup": null,
+        "accessMainGroup": "Yes",
+        "companyListing": "Yes",
+        "advertisementOfficialGroups": "Yes",
+        "webinarHosting": "Yes",
+        "advertisementWebsite": "3 Month Free",
+        "discountEventSponsorship": "Yes",
+        "discountExhibitionStalls": "Yes"
+      }
+    }
+  ],
+  "featureLabels": [
+    "Invitation for in Personal Meetings",
+    "Invitation for in Online Meetings",
+    "Access to Associate Members Group",
+    "Access to MASMA Main Group",
+    "Company Listing on MASMA Website",
+    "Advertisement on MASMA Official Groups",
+    "Webinar Hosting",
+    "Advertisement on MASMA Website",
+    "Discounts on Event Sponsorship",
+    "Discount on Exhibition Stalls"
+  ]
+}
