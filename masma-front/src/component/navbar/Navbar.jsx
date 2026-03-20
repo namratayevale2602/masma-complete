@@ -162,7 +162,7 @@ const Navbar = () => {
               <img
                 src={masmaLogo}
                 alt="masma logo"
-                className="h-16 w-16 object-cover"
+                className="h-16 w-16 object-contain"
               />
             </motion.div>
 
