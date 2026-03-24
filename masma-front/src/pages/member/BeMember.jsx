@@ -78,13 +78,16 @@ const BeMember = () => {
   ];
 
   const registrationTypes = [
+    { type: "epc_classic", amount: "3000", name: "EPC Classic", tip: "500₹ for registration" },
     { type: "renew_epc_classic", amount: "2500", name: "Renew EPC Classic" },
     { type: "student", amount: "1000", name: "Student" },
-    { type: "installer", amount: "1500", name: "Installer" },
-    { type: "epc_classic", amount: "3000", name: "EPC Classic" },
-    { type: "dealer_distributor", amount: "5500", name: "Dealer/Distributor" },
-    { type: "silver_corporate", amount: "10500", name: "Silver Corporate" },
-    { type: "gold_corporate", amount: "20500", name: "Gold Corporate" },
+    { type: "renew_student", amount: "1000", name: "Renew Student" },
+    { type: "dealer_distributor", amount: "5500", name: "Dealer/Distributor",tip: "500₹ for registration" },
+    { type: "renew_dealer_distributor", amount: "5000", name: "Renew Dealer/Distributor" },
+    { type: "silver_corporate", amount: "10500", name: "Silver Corporate",tip: "500₹ for registration" },
+    { type: "renew_silver_corporate", amount: "10000", name: "Renew Silver Corporate" },
+    { type: "gold_corporate", amount: "20500", name: "Gold Corporate",tip: "500₹ for registration" },
+    { type: "renew_gold_corporate", amount: "20000", name: "Renew Gold Corporate" },
   ];
 
   const paymentModes = [
@@ -136,26 +139,77 @@ const BeMember = () => {
     return value;
   };
 
-  const handleInputChange = (e) => {
-    const { name, value, type, checked, files } = e.target;
+  const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
-    if (type === "file") {
+// Add state for file info
+const [fileInfo, setFileInfo] = useState({
+  applicant_photo: null,
+  visiting_card: null,
+  payment_screenshot: null
+});
+
+  const handleInputChange = (e) => {
+  const { name, value, type, checked, files } = e.target;
+
+  if (type === "file") {
+    const file = files[0];
+    if (file) {
+      // Check file size (5MB = 5 * 1024 * 1024 bytes)
+      const maxSizeMB = 5;
+      const maxSizeBytes = maxSizeMB * 1024 * 1024;
+      
+      if (file.size > maxSizeBytes) {
+        setMessage({
+          type: "error",
+          text: `File size exceeds ${maxSizeMB}MB limit. Please compress or choose a smaller image. (Current size: ${(file.size / 1024 / 1024).toFixed(2)}MB)`
+        });
+        
+        // Clear the file input
+        e.target.value = "";
+        return;
+      }
+      
+      // Optional: Check file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        setMessage({
+          type: "error",
+          text: `Invalid file type. Please upload JPG, PNG, GIF, or WEBP images only.`
+        });
+        
+        // Clear the file input
+        e.target.value = "";
+        return;
+      }
+      
+      // Clear any previous error messages
+      setMessage({ type: "", text: "" });
+      
       setFormData((prev) => ({
         ...prev,
-        [name]: files[0],
-      }));
-    } else if (type === "checkbox") {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: checked,
-      }));
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: value,
+        [name]: file,
       }));
     }
-  };
+  } else if (type === "checkbox") {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: checked,
+    }));
+  } else {
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+};
+
+
 
   const handleRegistrationTypeChange = (e) => {
     const selectedType = registrationTypes.find(
@@ -235,142 +289,217 @@ const BeMember = () => {
     setCurrentStep(1);
   };
 
-  const handleSubmit = async (e) => {
+  // Add a state for submission lock
+const [isSubmitting, setIsSubmitting] = useState(false);
+
+// Update your handleSubmit function
+const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (isSubmitting) {
+        setMessage({
+            type: "warning",
+            text: "Please wait, your submission is already being processed..."
+        });
+        return;
+    }
+    
     if (!validateStep()) {
-      setMessage({
-        type: "error",
-        text: "Please fill in all required fields.",
-      });
-      return;
+        setMessage({
+            type: "error",
+            text: "Please fill in all required fields.",
+        });
+        return;
     }
 
     if (!formData.declaration) {
-      setMessage({
-        type: "error",
-        text: "You must accept the declaration to proceed.",
-      });
-      return;
+        setMessage({
+            type: "error",
+            text: "You must accept the declaration to proceed.",
+        });
+        return;
     }
 
+    setIsSubmitting(true);
     setLoading(true);
     setMessage({ type: "", text: "" });
 
     try {
-      const submitData = new FormData();
+        const submitData = new FormData();
 
-      Object.keys(formData).forEach((key) => {
-        if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
-          submitData.append(key, formData[key]);
-        } else if (formData[key] !== null && formData[key] !== undefined) {
-          if (key === "declaration") {
-            submitData.append(key, formData[key] ? "1" : "0");
-          } else {
-            submitData.append(key, formData[key]);
-          }
-        }
-      });
+        Object.keys(formData).forEach((key) => {
+            if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
+                submitData.append(key, formData[key]);
+            } else if (formData[key] !== null && formData[key] !== undefined) {
+                if (key === "declaration") {
+                    submitData.append(key, formData[key] ? "1" : "0");
+                } else {
+                    submitData.append(key, formData[key]);
+                }
+            }
+        });
 
-      console.log("Submitting data:", Object.fromEntries(submitData));
+        const response = await axiosInstance.post("/registrations", submitData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+            },
+        });
 
-      const response = await axiosInstance.post("/registrations", submitData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
-
-      setShowSuccess(true);
+        // Store member ID from response
+        const memberId = response.data.member_id;
+        const isRenewal = response.data.is_renewal;
+        
+        setShowSuccess(true);
+        setSuccessData({ memberId, isRenewal });
+        
+        setTimeout(() => {
+            resetForm();
+        }, 1000);
 
     } catch (error) {
-      console.error("Registration error:", error);
-      let errorMessage = "Failed to submit registration. Please try again.";
+        console.error("Registration error:", error);
+        let errorMessage = "Failed to submit registration. Please try again.";
 
-      if (error.response?.data?.errors) {
-        const errors = error.response.data.errors;
-        errorMessage = Object.values(errors).flat().join(", ");
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      }
+        if (error.response?.data?.errors) {
+            const errors = error.response.data.errors;
+            errorMessage = Object.values(errors).flat().join(", ");
+        } else if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.response?.data?.duplicate) {
+            errorMessage = error.response.data.message || "Duplicate submission detected. Please check your email for confirmation.";
+        }
 
-      setMessage({
-        type: "error",
-        text: errorMessage,
-      });
+        setMessage({
+            type: "error",
+            text: errorMessage,
+        });
+        
+        setIsSubmitting(false);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
+
+const [successData, setSuccessData] = useState({ memberId: null, isRenewal: false });
+// Add reset form function
+const resetForm = () => {
+    setFormData({
+        applicant_name: "",
+        date_of_birth: "",
+        organization: "",
+        mobile: "",
+        phone: "",
+        whatsapp_no: "",
+        office_email: "",
+        city: "",
+        town: "",
+        village: "",
+        website: "",
+        organization_type: "",
+        business_category: "",
+        date_of_incorporation: "",
+        pan_number: "",
+        gst_number: "",
+        about_service: "",
+        membership_reference_1: "",
+        membership_reference_2: "",
+        registration_type: "",
+        registration_amount: "",
+        payment_mode: "",
+        transaction_reference: "",
+        declaration: false,
+        applicant_photo: null,
+        visiting_card: null,
+        payment_screenshot: null,
+    });
+    setCurrentStep(1);
+    setIsSubmitting(false);
+};
 
   // Success Modal Component
-  const SuccessModal = () => (
+ const SuccessModal = ({ memberId, isRenewal }) => (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
-      onClick={handleCloseSuccess}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+        onClick={handleCloseSuccess}
     >
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.8, opacity: 0 }}
-        transition={{ type: "spring", damping: 20, stiffness: 300 }}
-        className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close Button */}
-        <button
-          onClick={handleCloseSuccess}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+        <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
         >
-          <X className="h-6 w-6" />
-        </button>
+            {/* Close Button */}
+            <button
+                onClick={handleCloseSuccess}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+                <X className="h-6 w-6" />
+            </button>
 
-        <div className="text-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6"
-          >
-            <CheckCircle className="h-12 w-12 text-green-600" />
-          </motion.div>
-          
-          <motion.h2
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="text-2xl font-bold text-gray-900 mb-3"
-          >
-            Registration Successful!
-          </motion.h2>
-          
-          <motion.p
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="text-gray-600 mb-6"
-          >
-            Thank you for registering. Your application has been submitted successfully. 
-            We will review your details and get back to you soon.
-          </motion.p>
-          
-          
-
-          <motion.button
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            onClick={handleCloseSuccess}
-            className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
-          >
-            Close
-          </motion.button>
-        </div>
-      </motion.div>
+            <div className="text-center">
+                <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                    className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6"
+                >
+                    <CheckCircle className="h-12 w-12 text-green-600" />
+                </motion.div>
+                
+                <motion.h2
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-2xl font-bold text-gray-900 mb-3"
+                >
+                    {isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!"}
+                </motion.h2>
+                
+                {/* Display Member ID prominently */}
+                {memberId && (
+                    <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.4 }}
+                        className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6"
+                    >
+                        <p className="text-sm text-blue-600 mb-1">Your Member ID</p>
+                        <p className="text-2xl font-bold text-blue-800 font-mono">{memberId}</p>
+                        <p className="text-xs text-blue-600 mt-2">
+                            Please save this ID for future reference
+                        </p>
+                    </motion.div>
+                )}
+                
+                <motion.p
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.5 }}
+                    className="text-gray-600 mb-6"
+                >
+                    Thank you for {isRenewal ? "renewing your membership" : "registering"}. 
+                    Your application has been submitted successfully. 
+                    We will review your details and get back to you soon.
+                </motion.p>
+                
+                <motion.button
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.6 }}
+                    onClick={handleCloseSuccess}
+                    className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
+                >
+                    Close
+                </motion.button>
+            </div>
+        </motion.div>
     </motion.div>
-  );
+);
 
   // Step Indicator Component
   const StepIndicator = () => (
@@ -456,26 +585,38 @@ const BeMember = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Applicant Photo
+                  <span className="text-xs text-gray-500 ml-2">(Max 5MB, JPG/PNG/GIF/WEBP)</span>
                 </label>
                 <input
                   type="file"
                   name="applicant_photo"
                   onChange={handleInputChange}
-                  accept="image/*"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
                 />
+                {fileInfo.applicant_photo && (
+                  <p className="text-xs text-green-600 mt-1">
+                    Selected: {fileInfo.applicant_photo.name} ({fileInfo.applicant_photo.size})
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Visiting Card
+                  <span className="text-xs text-gray-500 ml-2">(Max 5MB, JPG/PNG/GIF/WEBP)</span>
                 </label>
                 <input
                   type="file"
                   name="visiting_card"
                   onChange={handleInputChange}
-                  accept="image/*"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
                 />
+                {fileInfo.visiting_card && (
+                  <p className="text-xs text-green-600 mt-1">
+                    Selected: {fileInfo.visiting_card.name} ({fileInfo.visiting_card.size})
+                  </p>
+                )}
               </div>
             </div>
           </motion.div>
@@ -802,7 +943,20 @@ const BeMember = () => {
                     </option>
                   ))}
                 </select>
+                
+                {/* Show tip only for selected registration type */}
+                {formData.registration_type && 
+                  (() => {
+                    const selectedType = registrationTypes.find(rt => rt.type === formData.registration_type);
+                    return selectedType?.tip && (
+                      <div className="mt-2 text-sm text-blue-600 bg-blue-50 p-2 rounded">
+                         Tip: {selectedType.tip}
+                      </div>
+                    );
+                  })()
+                }
               </div>
+              
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Registration Amount (₹)
@@ -815,6 +969,7 @@ const BeMember = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 font-semibold text-[#005aa8]"
                 />
               </div>
+              
             </div>
 
             {/* Bank Details */}
@@ -875,18 +1030,24 @@ const BeMember = () => {
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload Payment Screenshot *
+                  <span className="text-xs text-gray-500 ml-2">(Max 5MB, JPG/PNG/GIF/WEBP)</span>
                 </label>
                 <input
                   type="file"
                   name="payment_screenshot"
                   onChange={handleInputChange}
-                  accept="image/*"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
                   required
                 />
+                {fileInfo.payment_screenshot && (
+                  <p className="text-xs text-green-600 mt-1">
+                    Selected: {fileInfo.payment_screenshot.name} ({fileInfo.payment_screenshot.size})
+                  </p>
+                )}
               </div>
             </div>
 
@@ -987,22 +1148,22 @@ const BeMember = () => {
 
             {currentStep === steps.length ? (
               <button
-                type="submit"
-                disabled={loading}
-                className="flex items-center px-8 py-3 bg-[#ed6605] text-white font-semibold rounded-md hover:bg-[#d45a04] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#ed6605] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Submitting...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Submit Registration
-                  </>
-                )}
-              </button>
+    type="submit"
+    disabled={loading || isSubmitting}
+    className="flex items-center px-8 py-3 bg-[#ed6605] text-white font-semibold rounded-md hover:bg-[#d45a04] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#ed6605] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+>
+    {loading || isSubmitting ? (
+        <>
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            Submitting...
+        </>
+    ) : (
+        <>
+            <FileText className="h-4 w-4 mr-2" />
+            Submit Registration
+        </>
+    )}
+</button>
             ) : (
               <button
                 type="button"

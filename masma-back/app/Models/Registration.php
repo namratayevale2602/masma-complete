@@ -43,6 +43,10 @@ class Registration extends Model
         'remember_token',
         'credentials_sent',
         'credentials_sent_at',
+        'submission_token', // Add this field for duplicate prevention
+        'ip_address', // Optional: track IP for security
+        'member_id', // Add member_id to fillable
+        'parent_member_id', // Add parent_member_id to fillable
     ];
 
     protected $casts = [
@@ -55,6 +59,88 @@ class Registration extends Model
         'credentials_sent_at' => 'datetime',
         'payment_verified_at' => 'datetime',
     ];
+
+    /**
+     * Generate a unique member ID
+     * Format: MASMA-YYYY-XXXXX (where XXXXX is a sequential number)
+     */
+    public static function generateMemberId(): string
+    {
+        $year = date('Y');
+        $prefix = "MASMA-{$year}-";
+        
+        // Get the last member ID for this year
+        $lastMember = self::where('member_id', 'like', $prefix . '%')
+            ->orderBy('member_id', 'desc')
+            ->first();
+        
+        if ($lastMember) {
+            // Extract the numeric part
+            $lastNumber = (int) substr($lastMember->member_id, strlen($prefix));
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
+        
+        // Pad with zeros to 5 digits
+        $paddedNumber = str_pad($newNumber, 5, '0', STR_PAD_LEFT);
+        
+        return $prefix . $paddedNumber;
+    }
+    
+    /**
+     * Check if registration type is a renewal
+     */
+    public static function isRenewalType($registrationType): bool
+    {
+        $renewalTypes = [
+            'renew_epc_classic',
+            'renew_student',
+            'renew_dealer_distributor',
+            'renew_silver_corporate',
+            'renew_gold_corporate'
+        ];
+        
+        return in_array($registrationType, $renewalTypes);
+    }
+    
+    /**
+     * Find existing member by email or mobile for renewal
+     */
+    public static function findExistingMember($email, $mobile)
+    {
+        return self::where(function($query) use ($email, $mobile) {
+                $query->where('office_email', $email)
+                    ->orWhere('mobile', $mobile);
+            })
+            ->whereNotNull('member_id') // Only return members with assigned ID
+            ->orderBy('created_at', 'desc')
+            ->first();
+    }
+    
+    /**
+     * Get the parent registration (for renewals)
+     */
+    public function parent()
+    {
+        return $this->belongsTo(Registration::class, 'parent_member_id', 'member_id');
+    }
+    
+    /**
+     * Get all renewals for this member
+     */
+    public function renewals()
+    {
+        return $this->hasMany(Registration::class, 'parent_member_id', 'member_id');
+    }
+    
+    /**
+     * Check if this is a renewal
+     */
+    public function isRenewal()
+    {
+        return !is_null($this->parent_member_id);
+    }
 
     // Accessor for full photo URL
     public function getApplicantPhotoUrlAttribute()
@@ -95,17 +181,20 @@ class Registration extends Model
         return $modes[$this->payment_mode] ?? $this->payment_mode;
     }
 
-    // Get registration type display name
+    // Get registration type display name - UPDATED with all types
     public function getRegistrationTypeDisplayAttribute()
     {
         $types = [
+            'epc_classic' => 'EPC Classic',
             'renew_epc_classic' => 'Renew EPC Classic',
             'student' => 'Student',
-            'installer' => 'Installer',
-            'epc_classic' => 'EPC Classic',
+            'renew_student' => 'Renew Student',
             'dealer_distributor' => 'Dealer/Distributor',
+            'renew_dealer_distributor' => 'Renew Dealer/Distributor',
             'silver_corporate' => 'Silver Corporate',
+            'renew_silver_corporate' => 'Renew Silver Corporate',
             'gold_corporate' => 'Gold Corporate',
+            'renew_gold_corporate' => 'Renew Gold Corporate',
         ];
 
         return $types[$this->registration_type] ?? $this->registration_type;

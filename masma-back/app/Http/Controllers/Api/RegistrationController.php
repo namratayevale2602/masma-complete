@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class RegistrationController extends Controller
 {
@@ -102,7 +103,7 @@ class RegistrationController extends Controller
         $password = env('SMS_PASSWORD');
         $senderId = env('SMS_SENDER_ID');
 
-        $message = "FINAL CALL! Last chance to book a stall MASMA Renewable Energy Expo 2026 Stall booking closing soon. Call now 8999316256 or visit https://masmaexpo.in Team MASMA";
+        $message = "Your registration form has been submitted successfully. After payment reconciliation, the admin team will contact you. – MASMA";
 
         $url = "https://www.smsjust.com/sms/user/urlsms.php?" . http_build_query([
             'username' => $username,
@@ -175,63 +176,88 @@ class RegistrationController extends Controller
     }
     
     
-      public function store(Request $request)
+    public function store(Request $request)
     {
-        $validated = $request->validate([
-            // Personal Information
-            'applicant_name' => 'required|string|max:255',
-            'date_of_birth' => 'required|date',
+        // Generate a unique submission token based on key fields
+        $submissionToken = $this->generateSubmissionToken($request);
+        
+        // Check if this submission was already processed (using cache for quick check)
+        $cacheKey = 'submission_' . $submissionToken;
+        
+        if (Cache::has($cacheKey)) {
+            Log::warning('Duplicate submission attempt detected', [
+                'token' => $submissionToken,
+                'email' => $request->office_email,
+                'ip' => $request->ip()
+            ]);
             
-            // Contact Information
-            'mobile' => 'required|string|max:20',
-            'phone' => 'nullable|string|max:20',
-            'whatsapp_no' => 'nullable|string|max:20',
-            'office_email' => 'required|email|max:255',
-            
-            // Address Information
-            'city' => 'nullable|string|max:100',
-            'town' => 'nullable|string|max:100',
-            'village' => 'nullable|string|max:100',
-            
-            // Business Information
-            'organization' => 'nullable|string|max:255',
-            'website' => 'nullable|url|max:255',
-            'organization_type' => 'nullable|string|in:sole_proprietorship,partnership,limited_liability_partnership,private_limited_company,public_limited_company,one_person_company,other',
-            'business_category' => 'nullable|string|in:student,plumber,electrician,installer_solar_pv,solar_water_heater,supplier,dealer,distributor,associate_member,manufacturer',
-            'date_of_incorporation' => 'nullable|date',
-            'pan_number' => 'nullable|string|max:20',
-            'gst_number' => 'nullable|string|max:20',
-            'about_service' => 'nullable|string',
-            
-            // Membership References
-            'membership_reference_1' => 'required|string|max:255',
-            'membership_reference_2' => 'required|string|max:255',
-            
-            // Registration Details
-            'registration_type' => 'required|string|in:renew_epc_classic,student,installer,epc_classic,dealer_distributor,silver_corporate,gold_corporate',
-            'registration_amount' => 'required|numeric|min:0',
-            
-            // Payment Details - NOW REQUIRED
-            'payment_mode' => 'required|string|in:neft,upi,rtgs,imps,cash,cheque',
-            'transaction_reference' => 'required|string|max:255',
-            
-            // Files
-            'applicant_photo' => 'nullable|image|max:5120',
-            'visiting_card' => 'nullable|image|max:5120',
-            'payment_screenshot' => 'required|image|max:5120',
-            
-            // Declaration
-            'declaration' => 'required|boolean',
-        ], [
-            'office_email.required' => 'Email address is required.',
-            'payment_mode.required' => 'Please select a payment mode.',
-            'transaction_reference.required' => 'Please enter the transaction reference number.',
-            'payment_screenshot.required' => 'Please upload a payment screenshot.',
-            'payment_screenshot.image' => 'Payment screenshot must be an image file.',
-            'payment_screenshot.max' => 'Payment screenshot must not exceed 5MB.',
-        ]);
-
+            return response()->json([
+                'success' => false,
+                'message' => 'Your submission is already being processed. Please wait a moment and check your email for confirmation.',
+                'duplicate' => true
+            ], Response::HTTP_CONFLICT);
+        }
+        
+        // Store token in cache for 5 minutes to prevent duplicate submissions
+        Cache::put($cacheKey, true, now()->addMinutes(5));
+        
         try {
+            // Validate the request
+            $validated = $request->validate([
+                // Personal Information
+                'applicant_name' => 'required|string|max:255',
+                'date_of_birth' => 'required|date',
+                
+                // Contact Information
+                'mobile' => 'required|string|max:20',
+                'phone' => 'nullable|string|max:20',
+                'whatsapp_no' => 'nullable|string|max:20',
+                'office_email' => 'required|email|max:255',
+                
+                // Address Information
+                'city' => 'nullable|string|max:100',
+                'town' => 'nullable|string|max:100',
+                'village' => 'nullable|string|max:100',
+                
+                // Business Information
+                'organization' => 'nullable|string|max:255',
+                'website' => 'nullable|url|max:255',
+                'organization_type' => 'nullable|string|in:sole_proprietorship,partnership,limited_liability_partnership,private_limited_company,public_limited_company,one_person_company,other',
+                'business_category' => 'nullable|string|in:student,plumber,electrician,installer_solar_pv,solar_water_heater,supplier,dealer,distributor,associate_member,manufacturer',
+                'date_of_incorporation' => 'nullable|date',
+                'pan_number' => 'nullable|string|max:20',
+                'gst_number' => 'nullable|string|max:20',
+                'about_service' => 'nullable|string',
+                
+                // Membership References
+                'membership_reference_1' => 'required|string|max:255',
+                'membership_reference_2' => 'required|string|max:255',
+                
+                // Registration Details
+                'registration_type' => 'sometimes|required|string|in:epc_classic,renew_epc_classic,student,renew_student,dealer_distributor,renew_dealer_distributor,silver_corporate,renew_silver_corporate,gold_corporate,renew_gold_corporate',
+                'registration_amount' => 'required|numeric|min:0',
+                
+                // Payment Details
+                'payment_mode' => 'required|string|in:neft,upi,rtgs,imps,cash,cheque',
+                'transaction_reference' => 'required|string|max:255',
+                
+                // Files
+                'applicant_photo' => 'nullable|image|max:5120',
+                'visiting_card' => 'nullable|image|max:5120',
+                'payment_screenshot' => 'required|image|max:5120',
+                
+                // Declaration
+                'declaration' => 'required|boolean',
+            ], [
+                'office_email.required' => 'Email address is required.',
+                'payment_mode.required' => 'Please select a payment mode.',
+                'transaction_reference.required' => 'Please enter the transaction reference number.',
+                'payment_screenshot.required' => 'Please upload a payment screenshot.',
+                'payment_screenshot.image' => 'Payment screenshot must be an image file.',
+                'payment_screenshot.max' => 'Payment screenshot must not exceed 5MB.',
+                'registration_type.in' => 'Invalid registration type selected.',
+            ]);
+
             DB::beginTransaction();
 
             // Handle different boolean formats for declaration
@@ -243,6 +269,10 @@ class RegistrationController extends Controller
 
             // Set payment_verified to false initially
             $validated['payment_verified'] = false;
+            
+            // Add submission token and IP address
+            $validated['submission_token'] = $submissionToken;
+            $validated['ip_address'] = $request->ip();
 
             // Handle file uploads
             if ($request->hasFile('applicant_photo')) {
@@ -265,9 +295,63 @@ class RegistrationController extends Controller
             unset($validated['visiting_card']);
             unset($validated['payment_screenshot']);
 
+            // ========== MEMBER ID LOGIC ==========
+            $isRenewal = Registration::isRenewalType($validated['registration_type']);
+            $existingMember = null;
+            $parentMemberId = null;
+            
+            if ($isRenewal) {
+                // For renewals, try to find existing member by email or mobile
+                $existingMember = Registration::findExistingMember(
+                    $validated['office_email'], 
+                    $validated['mobile']
+                );
+                
+                if ($existingMember && $existingMember->member_id) {
+                    // Use existing member's ID for renewal
+                    $validated['member_id'] = $existingMember->member_id;
+                    $parentMemberId = $existingMember->member_id;
+                } else {
+                    // No existing member found, but it's marked as renewal
+                    // This could be an error, or we can treat as new registration
+                    Log::warning('Renewal attempted but no existing member found', [
+                        'email' => $validated['office_email'],
+                        'mobile' => $validated['mobile'],
+                        'registration_type' => $validated['registration_type']
+                    ]);
+                    
+                    // Option 1: Treat as new registration (uncomment to use)
+                    // $isRenewal = false;
+                    // $validated['member_id'] = Registration::generateMemberId();
+                    
+                    // Option 2: Throw error (recommended)
+                    DB::rollBack();
+                    Cache::forget($cacheKey);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No existing membership found for renewal. Please register as a new member or contact support.',
+                        'error' => 'existing_member_not_found'
+                    ], Response::HTTP_BAD_REQUEST);
+                }
+            } else {
+                // New registration - generate new unique member ID
+                $validated['member_id'] = Registration::generateMemberId();
+            }
+            
+            // Add parent member ID for renewal linking
+            if ($parentMemberId) {
+                $validated['parent_member_id'] = $parentMemberId;
+            }
+            // ========== END MEMBER ID LOGIC ==========
+
+            // Create registration
             $registration = Registration::create($validated);
 
             DB::commit();
+            
+            // Clear the cache token after successful submission
+            Cache::forget($cacheKey);
 
             // Send email notification to admin
             try {
@@ -282,7 +366,7 @@ class RegistrationController extends Controller
             $messageResults = $this->sendConfirmationMessages($registration);
             
             // Log message results
-            if ($messageResults['whatsapp']) {
+            if ($messageResults['whatsapp'] ?? false) {
                 if ($messageResults['whatsapp']['success']) {
                     Log::info('WhatsApp confirmation sent to: ' . $registration->mobile);
                 } else {
@@ -290,7 +374,7 @@ class RegistrationController extends Controller
                 }
             }
             
-            if ($messageResults['sms']) {
+            if ($messageResults['sms'] ?? false) {
                 if ($messageResults['sms']['success']) {
                     Log::info('SMS confirmation sent to: ' . $registration->mobile);
                 } else {
@@ -300,8 +384,10 @@ class RegistrationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Registration submitted successfully! Your payment details have been received and are pending verification.',
+                'message' => $isRenewal ? 'Membership renewal submitted successfully!' : 'Registration submitted successfully!',
                 'data' => $registration,
+                'member_id' => $registration->member_id,
+                'is_renewal' => $isRenewal,
                 'notifications' => [
                     'whatsapp' => $messageResults['whatsapp'] ?? null,
                     'sms' => $messageResults['sms'] ?? null
@@ -310,6 +396,8 @@ class RegistrationController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Cache::forget($cacheKey);
+            
             Log::error('Registration error: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             
@@ -319,6 +407,22 @@ class RegistrationController extends Controller
                 'error' => $e->getMessage()
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+    
+    /**
+     * Generate a unique submission token to prevent duplicate submissions
+     */
+    private function generateSubmissionToken(Request $request): string
+    {
+        // Create a unique token based on email, mobile, and timestamp
+        $data = [
+            $request->office_email,
+            $request->mobile,
+            now()->format('Y-m-d-H'), // Hour-based to allow resubmission after an hour
+            $request->ip()
+        ];
+        
+        return hash('sha256', implode('|', $data));
     }
 
     // Verify payment (admin function)
