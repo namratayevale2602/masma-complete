@@ -177,237 +177,226 @@ class RegistrationController extends Controller
     
     
     public function store(Request $request)
-    {
-        // Generate a unique submission token based on key fields
-        $submissionToken = $this->generateSubmissionToken($request);
+{
+    // Generate a unique submission token based on key fields
+    $submissionToken = $this->generateSubmissionToken($request);
+    
+    // Check if this submission was already processed (using cache for quick check)
+    $cacheKey = 'submission_' . $submissionToken;
+    
+    if (Cache::has($cacheKey)) {
+        Log::warning('Duplicate submission attempt detected', [
+            'token' => $submissionToken,
+            'email' => $request->office_email,
+            'ip' => $request->ip()
+        ]);
         
-        // Check if this submission was already processed (using cache for quick check)
-        $cacheKey = 'submission_' . $submissionToken;
-        
-        if (Cache::has($cacheKey)) {
-            Log::warning('Duplicate submission attempt detected', [
-                'token' => $submissionToken,
-                'email' => $request->office_email,
-                'ip' => $request->ip()
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Your submission is already being processed. Please wait a moment and check your email for confirmation.',
-                'duplicate' => true
-            ], Response::HTTP_CONFLICT);
-        }
-        
-        // Store token in cache for 5 minutes to prevent duplicate submissions
-        Cache::put($cacheKey, true, now()->addMinutes(5));
-        
-        try {
-            // Validate the request
-            $validated = $request->validate([
-                // Personal Information
-                'applicant_name' => 'required|string|max:255',
-                'date_of_birth' => 'required|date',
-                
-                // Contact Information
-                'mobile' => 'required|string|max:20',
-                'phone' => 'nullable|string|max:20',
-                'whatsapp_no' => 'nullable|string|max:20',
-                'office_email' => 'required|email|max:255',
-                
-                // Address Information
-                'city' => 'nullable|string|max:100',
-                'town' => 'nullable|string|max:100',
-                'village' => 'nullable|string|max:100',
-                
-                // Business Information
-                'organization' => 'nullable|string|max:255',
-                'website' => 'nullable|url|max:255',
-                'organization_type' => 'nullable|string|in:sole_proprietorship,partnership,limited_liability_partnership,private_limited_company,public_limited_company,one_person_company,other',
-                'business_category' => 'nullable|string|in:student,plumber,electrician,installer_solar_pv,solar_water_heater,supplier,dealer,distributor,associate_member,manufacturer',
-                'date_of_incorporation' => 'nullable|date',
-                'pan_number' => 'nullable|string|max:20',
-                'gst_number' => 'nullable|string|max:20',
-                'about_service' => 'nullable|string',
-                
-                // Membership References
-                'membership_reference_1' => 'required|string|max:255',
-                'membership_reference_2' => 'required|string|max:255',
-                
-                // Registration Details
-                'registration_type' => 'sometimes|required|string|in:epc_classic,renew_epc_classic,student,renew_student,dealer_distributor,renew_dealer_distributor,silver_corporate,renew_silver_corporate,gold_corporate,renew_gold_corporate',
-                'registration_amount' => 'required|numeric|min:0',
-                
-                // Payment Details
-                'payment_mode' => 'required|string|in:neft,upi,rtgs,imps,cash,cheque',
-                'transaction_reference' => 'required|string|max:255',
-                
-                // Files
-                'applicant_photo' => 'nullable|image|max:5120',
-                'visiting_card' => 'nullable|image|max:5120',
-                'payment_screenshot' => 'required|image|max:5120',
-                
-                // Declaration
-                'declaration' => 'required|boolean',
-            ], [
-                'office_email.required' => 'Email address is required.',
-                'payment_mode.required' => 'Please select a payment mode.',
-                'transaction_reference.required' => 'Please enter the transaction reference number.',
-                'payment_screenshot.required' => 'Please upload a payment screenshot.',
-                'payment_screenshot.image' => 'Payment screenshot must be an image file.',
-                'payment_screenshot.max' => 'Payment screenshot must not exceed 5MB.',
-                'registration_type.in' => 'Invalid registration type selected.',
-            ]);
-
-            DB::beginTransaction();
-
-            // Handle different boolean formats for declaration
-            $declaration = $request->declaration;
-            if (is_string($declaration)) {
-                $declaration = filter_var($declaration, FILTER_VALIDATE_BOOLEAN);
-            }
-            $validated['declaration'] = (bool)$declaration;
-
-            // Set payment_verified to false initially
-            $validated['payment_verified'] = false;
-            
-            // Add submission token and IP address
-            $validated['submission_token'] = $submissionToken;
-            $validated['ip_address'] = $request->ip();
-
-            // Handle file uploads
-            if ($request->hasFile('applicant_photo')) {
-                $photoPath = $request->file('applicant_photo')->store('applicant-photos', 'public');
-                $validated['applicant_photo_path'] = $photoPath;
-            }
-
-            if ($request->hasFile('visiting_card')) {
-                $visitingCardPath = $request->file('visiting_card')->store('visiting-cards', 'public');
-                $validated['visiting_card_path'] = $visitingCardPath;
-            }
-
-            if ($request->hasFile('payment_screenshot')) {
-                $screenshotPath = $request->file('payment_screenshot')->store('payment-screenshots', 'public');
-                $validated['payment_screenshot_path'] = $screenshotPath;
-            }
-
-            // Remove file fields from validated data
-            unset($validated['applicant_photo']);
-            unset($validated['visiting_card']);
-            unset($validated['payment_screenshot']);
-
-            // ========== MEMBER ID LOGIC ==========
-            $isRenewal = Registration::isRenewalType($validated['registration_type']);
-            $existingMember = null;
-            $parentMemberId = null;
-            
-            if ($isRenewal) {
-                // For renewals, try to find existing member by email or mobile
-                $existingMember = Registration::findExistingMember(
-                    $validated['office_email'], 
-                    $validated['mobile']
-                );
-                
-                if ($existingMember && $existingMember->member_id) {
-                    // Use existing member's ID for renewal
-                    $validated['member_id'] = $existingMember->member_id;
-                    $parentMemberId = $existingMember->member_id;
-                } else {
-                    // No existing member found, but it's marked as renewal
-                    // This could be an error, or we can treat as new registration
-                    Log::warning('Renewal attempted but no existing member found', [
-                        'email' => $validated['office_email'],
-                        'mobile' => $validated['mobile'],
-                        'registration_type' => $validated['registration_type']
-                    ]);
-                    
-                    // Option 1: Treat as new registration (uncomment to use)
-                    // $isRenewal = false;
-                    // $validated['member_id'] = Registration::generateMemberId();
-                    
-                    // Option 2: Throw error (recommended)
-                    DB::rollBack();
-                    Cache::forget($cacheKey);
-                    
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No existing membership found for renewal. Please register as a new member or contact support.',
-                        'error' => 'existing_member_not_found'
-                    ], Response::HTTP_BAD_REQUEST);
-                }
-            } else {
-                // New registration - generate new unique member ID
-                $validated['member_id'] = Registration::generateMemberId();
-            }
-            
-            // Add parent member ID for renewal linking
-            if ($parentMemberId) {
-                $validated['parent_member_id'] = $parentMemberId;
-            }
-            // ========== END MEMBER ID LOGIC ==========
-
-            // Create registration
-            $registration = Registration::create($validated);
-
-            DB::commit();
-            
-            // Clear the cache token after successful submission
-            Cache::forget($cacheKey);
-
-            // Send email notification to admin
-            try {
-                $adminEmail = config('mail.from.address');
-                Mail::to($adminEmail)->send(new RegistrationNotification($registration, $adminEmail));
-                Log::info('Registration notification email sent to admin: ' . $adminEmail);
-            } catch (\Exception $e) {
-                Log::error('Failed to send registration notification email: ' . $e->getMessage());
-            }
-
-            // Send WhatsApp and SMS confirmation to user
-            $messageResults = $this->sendConfirmationMessages($registration);
-            
-            // Log message results
-            if ($messageResults['whatsapp'] ?? false) {
-                if ($messageResults['whatsapp']['success']) {
-                    Log::info('WhatsApp confirmation sent to: ' . $registration->mobile);
-                } else {
-                    Log::warning('WhatsApp failed: ' . ($messageResults['whatsapp']['error'] ?? 'Unknown error'));
-                }
-            }
-            
-            if ($messageResults['sms'] ?? false) {
-                if ($messageResults['sms']['success']) {
-                    Log::info('SMS confirmation sent to: ' . $registration->mobile);
-                } else {
-                    Log::warning('SMS failed: ' . ($messageResults['sms']['error'] ?? 'Unknown error'));
-                }
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => $isRenewal ? 'Membership renewal submitted successfully!' : 'Registration submitted successfully!',
-                'data' => $registration,
-                'member_id' => $registration->member_id,
-                'is_renewal' => $isRenewal,
-                'notifications' => [
-                    'whatsapp' => $messageResults['whatsapp'] ?? null,
-                    'sms' => $messageResults['sms'] ?? null
-                ]
-            ], Response::HTTP_CREATED);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Cache::forget($cacheKey);
-            
-            Log::error('Registration error: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to submit registration. Please try again.',
-                'error' => $e->getMessage()
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'success' => false,
+            'message' => 'Your submission is already being processed. Please wait a moment and check your email for confirmation.',
+            'duplicate' => true
+        ], Response::HTTP_CONFLICT);
     }
+    
+    // Store token in cache for 5 minutes to prevent duplicate submissions
+    Cache::put($cacheKey, true, now()->addMinutes(5));
+    
+    try {
+        // Validate the request
+        $validated = $request->validate([
+            // Personal Information
+            'applicant_name' => 'required|string|max:255',
+            'date_of_birth' => 'required|date',
+            
+            // Contact Information
+            'mobile' => 'required|string|max:20',
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_no' => 'nullable|string|max:20',
+            'office_email' => 'required|email|max:255',
+            
+            // Address Information
+            'city' => 'nullable|string|max:100',
+            'town' => 'nullable|string|max:100',
+            'village' => 'nullable|string|max:100',
+            
+            // Business Information
+            'organization' => 'nullable|string|max:255',
+            'website' => 'nullable|url|max:255',
+            'organization_type' => 'nullable|string|in:sole_proprietorship,partnership,limited_liability_partnership,private_limited_company,public_limited_company,one_person_company,other',
+            'business_category' => 'nullable|string|in:student,plumber,electrician,installer_solar_pv,solar_water_heater,supplier,dealer,distributor,associate_member,manufacturer',
+            'date_of_incorporation' => 'nullable|date',
+            'pan_number' => 'nullable|string|max:20',
+            'gst_number' => 'nullable|string|max:20',
+            'about_service' => 'nullable|string',
+            
+            // Membership References
+            'membership_reference_1' => 'required|string|max:255',
+            'membership_reference_2' => 'required|string|max:255',
+            
+            // Registration Details
+            'registration_type' => 'sometimes|required|string|in:epc_classic,renew_epc_classic,student,renew_student,dealer_distributor,renew_dealer_distributor,silver_corporate,renew_silver_corporate,gold_corporate,renew_gold_corporate',
+            'registration_amount' => 'required|numeric|min:0',
+            
+            // Payment Details
+            'payment_mode' => 'required|string|in:neft,upi,rtgs,imps,cash,cheque',
+            'transaction_reference' => 'required|string|max:255',
+            
+            // Files
+            'applicant_photo' => 'nullable|image|max:5120',
+            'visiting_card' => 'nullable|image|max:5120',
+            'payment_screenshot' => 'required|image|max:5120',
+            
+            // Declaration
+            'declaration' => 'required|boolean',
+        ], [
+            'office_email.required' => 'Email address is required.',
+            'payment_mode.required' => 'Please select a payment mode.',
+            'transaction_reference.required' => 'Please enter the transaction reference number.',
+            'payment_screenshot.required' => 'Please upload a payment screenshot.',
+            'payment_screenshot.image' => 'Payment screenshot must be an image file.',
+            'payment_screenshot.max' => 'Payment screenshot must not exceed 5MB.',
+            'registration_type.in' => 'Invalid registration type selected.',
+        ]);
+
+        DB::beginTransaction();
+
+        // Handle different boolean formats for declaration
+        $declaration = $request->declaration;
+        if (is_string($declaration)) {
+            $declaration = filter_var($declaration, FILTER_VALIDATE_BOOLEAN);
+        }
+        $validated['declaration'] = (bool)$declaration;
+
+        // Set payment_verified to false initially
+        $validated['payment_verified'] = false;
+        
+        // Add submission token and IP address
+        $validated['submission_token'] = $submissionToken;
+        $validated['ip_address'] = $request->ip();
+
+        // Handle file uploads
+        if ($request->hasFile('applicant_photo')) {
+            $photoPath = $request->file('applicant_photo')->store('applicant-photos', 'public');
+            $validated['applicant_photo_path'] = $photoPath;
+        }
+
+        if ($request->hasFile('visiting_card')) {
+            $visitingCardPath = $request->file('visiting_card')->store('visiting-cards', 'public');
+            $validated['visiting_card_path'] = $visitingCardPath;
+        }
+
+        if ($request->hasFile('payment_screenshot')) {
+            $screenshotPath = $request->file('payment_screenshot')->store('payment-screenshots', 'public');
+            $validated['payment_screenshot_path'] = $screenshotPath;
+        }
+
+        // Remove file fields from validated data
+        unset($validated['applicant_photo']);
+        unset($validated['visiting_card']);
+        unset($validated['payment_screenshot']);
+
+        // ========== MEMBER ID LOGIC ==========
+        $isRenewal = Registration::isRenewalType($validated['registration_type']);
+        $parentMemberId = null;
+        
+        if ($isRenewal) {
+            // For renewals, find existing member by email or mobile
+            $existingMember = Registration::findExistingMember(
+                $validated['office_email'], 
+                $validated['mobile']
+            );
+            
+            if ($existingMember && $existingMember->member_id) {
+                // IMPORTANT: For renewals:
+                // 1. DO NOT set member_id (leave it null)
+                // 2. Set parent_member_id to link to original member
+                // 3. Remove member_id from validated array if it exists
+                
+                $parentMemberId = $existingMember->member_id;
+                
+                // Ensure member_id is NOT set for renewal records
+                if (isset($validated['member_id'])) {
+                    unset($validated['member_id']);
+                }
+                
+                Log::info('Processing renewal', [
+                    'email' => $validated['office_email'],
+                    'parent_member_id' => $parentMemberId,
+                    'registration_type' => $validated['registration_type']
+                ]);
+            } else {
+                // No existing member found for renewal
+                DB::rollBack();
+                Cache::forget($cacheKey);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No existing membership found for renewal. Please register as a new member or contact support.',
+                    'error' => 'existing_member_not_found'
+                ], Response::HTTP_BAD_REQUEST);
+            }
+        } else {
+            // New registration - generate new unique member ID
+            $validated['member_id'] = Registration::generateMemberId();
+            
+            Log::info('Processing new registration', [
+                'email' => $validated['office_email'],
+                'member_id' => $validated['member_id']
+            ]);
+        }
+        
+        // Add parent member ID for renewal linking
+        if ($parentMemberId) {
+            $validated['parent_member_id'] = $parentMemberId;
+        }
+        // ========== END MEMBER ID LOGIC ==========
+
+        // Create registration - ONLY ONCE!
+        $registration = Registration::create($validated);
+
+        DB::commit();
+        
+        // Clear the cache token after successful submission
+        Cache::forget($cacheKey);
+
+        // Send email notification to admin
+        try {
+            $adminEmail = config('mail.from.address');
+            Mail::to($adminEmail)->send(new RegistrationNotification($registration, $adminEmail));
+            Log::info('Registration notification email sent to admin: ' . $adminEmail);
+        } catch (\Exception $e) {
+            Log::error('Failed to send registration notification email: ' . $e->getMessage());
+        }
+
+        // Send WhatsApp and SMS confirmation to user
+        // $messageResults = $this->sendConfirmationMessages($registration);
+        
+        return response()->json([
+            'success' => true,
+            'message' => $isRenewal ? 'Membership renewal submitted successfully!' : 'Registration submitted successfully!',
+            'data' => $registration,
+            'member_id' => $isRenewal ? $parentMemberId : $registration->member_id,
+            'is_renewal' => $isRenewal,
+            // 'notifications' => [
+            //     'whatsapp' => $messageResults['whatsapp'] ?? null,
+            //     'sms' => $messageResults['sms'] ?? null
+            // ]
+        ], Response::HTTP_CREATED);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Cache::forget($cacheKey);
+        
+        Log::error('Registration error: ' . $e->getMessage());
+        Log::error('Stack trace: ' . $e->getTraceAsString());
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to submit registration. Please try again.',
+            'error' => $e->getMessage()
+        ], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+}
     
     /**
      * Generate a unique submission token to prevent duplicate submissions
