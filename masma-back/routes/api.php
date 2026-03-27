@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\CircularController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\ContactMessageController;
 use App\Http\Controllers\Api\SocialMediaController;
+use App\Http\Controllers\Api\RenewalController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -59,6 +60,12 @@ Route::prefix('registrations')->group(function () {
     Route::get('/{registration}', [RegistrationController::class, 'show']);
     Route::put('/{registration}', [RegistrationController::class, 'update']);
     Route::delete('/{registration}', [RegistrationController::class, 'destroy']);
+});
+
+Route::prefix('renewals')->group(function () {
+    Route::get('/expiring', [RenewalController::class, 'getExpiringMembers']);
+    Route::post('/send', [RenewalController::class, 'sendRenewalReminder']);
+    Route::post('/bulk', [RenewalController::class, 'sendBulkReminders']);
 });
 
 // Registration Auth Routes

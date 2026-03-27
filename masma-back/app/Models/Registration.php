@@ -43,10 +43,10 @@ class Registration extends Model
         'remember_token',
         'credentials_sent',
         'credentials_sent_at',
-        'submission_token', // Add this field for duplicate prevention
-        'ip_address', // Optional: track IP for security
-        'member_id', // Add member_id to fillable
-        'parent_member_id', // Add parent_member_id to fillable
+        'submission_token',
+        'ip_address',
+        'member_id',
+        'parent_member_id',
     ];
 
     protected $casts = [
@@ -62,27 +62,23 @@ class Registration extends Model
 
     /**
      * Generate a unique member ID
-     * Format: MASMA-YYYY-XXXXX (where XXXXX is a sequential number)
      */
     public static function generateMemberId(): string
     {
         $year = date('Y');
         $prefix = "MASMA-{$year}-";
         
-        // Get the last member ID for this year
         $lastMember = self::where('member_id', 'like', $prefix . '%')
             ->orderBy('member_id', 'desc')
             ->first();
         
         if ($lastMember) {
-            // Extract the numeric part
             $lastNumber = (int) substr($lastMember->member_id, strlen($prefix));
             $newNumber = $lastNumber + 1;
         } else {
             $newNumber = 1;
         }
         
-        // Pad with zeros to 5 digits
         $paddedNumber = str_pad($newNumber, 5, '0', STR_PAD_LEFT);
         
         return $prefix . $paddedNumber;
@@ -113,10 +109,35 @@ class Registration extends Model
                 $query->where('office_email', $email)
                     ->orWhere('mobile', $mobile);
             })
-            ->whereNotNull('member_id') // Only return members with assigned ID
+            ->whereNotNull('member_id')
             ->orderBy('created_at', 'desc')
             ->first();
     }
+
+    /**
+ * Check if member has active verified membership
+ */
+public static function hasActiveMembership($email, $mobile)
+{
+    return self::where(function($query) use ($email, $mobile) {
+            $query->where('office_email', $email)
+                ->orWhere('mobile', $mobile);
+        })
+        ->where('payment_verified', true)
+        ->whereNotNull('member_id')
+        ->exists();
+}
+
+/**
+ * Check if there's a pending renewal for this member
+ */
+public static function hasPendingRenewal($memberId)
+{
+    return self::where('parent_member_id', $memberId)
+        ->where('payment_verified', false)
+        ->where('created_at', '>=', now()->subDays(30))
+        ->exists();
+}
     
     /**
      * Get the parent registration (for renewals)
@@ -142,29 +163,158 @@ class Registration extends Model
         return !is_null($this->parent_member_id);
     }
 
-    // Accessor for full photo URL
+    /**
+     * Get the filename from path
+     */
+    private function getFilenameFromPath($path)
+    {
+        if (!$path) return null;
+        return basename($path);
+    }
+
+    // Accessor for applicant photo URL - Using custom route
     public function getApplicantPhotoUrlAttribute()
     {
-        return $this->applicant_photo_path 
-            ? Storage::disk('public')->url($this->applicant_photo_path)
-            : null;
+        $filename = $this->getFilenameFromPath($this->applicant_photo_path);
+        if ($filename) {
+            return route('applicant.photo', ['filename' => $filename]);
+        }
+        return null;
     }
 
-    // Accessor for visiting card URL
+    // Accessor for visiting card URL - Using custom route
     public function getVisitingCardUrlAttribute()
     {
-        return $this->visiting_card_path 
-            ? Storage::disk('public')->url($this->visiting_card_path)
-            : null;
+        $filename = $this->getFilenameFromPath($this->visiting_card_path);
+        if ($filename) {
+            return route('visiting.card', ['filename' => $filename]);
+        }
+        return null;
     }
 
-    // Accessor for payment screenshot URL
+    // Accessor for payment screenshot URL - Using custom route
     public function getPaymentScreenshotUrlAttribute()
     {
-        return $this->payment_screenshot_path 
-            ? Storage::disk('public')->url($this->payment_screenshot_path)
-            : null;
+        $filename = $this->getFilenameFromPath($this->payment_screenshot_path);
+        if ($filename) {
+            return route('payment.screenshot', ['filename' => $filename]);
+        }
+        return null;
     }
+
+    /**
+     * Get the certificate URL
+     */
+    public function getCertificateUrlAttribute()
+    {
+        if (!$this->payment_verified) {
+            return null;
+        }
+        
+        $memberId = $this->member_id ?? $this->parent_member_id;
+        $certificatePath = storage_path("app/public/certificates/certificate_{$this->id}_{$memberId}.png");
+        
+        if (file_exists($certificatePath)) {
+            return route('certificate.view', $this->id);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get the receipt URL
+     */
+    public function getReceiptUrlAttribute()
+    {
+        if (!$this->payment_verified) {
+            return null;
+        }
+        
+        $memberId = $this->member_id ?? $this->parent_member_id;
+        $receiptPath = storage_path("app/public/receipts/receipt_{$this->id}_{$memberId}.png");
+        
+        if (file_exists($receiptPath)) {
+            return route('receipt.view', $this->id);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Check if certificate exists
+     */
+    public function hasCertificate()
+    {
+        if (!$this->payment_verified) {
+            return false;
+        }
+        
+        $memberId = $this->member_id ?? $this->parent_member_id;
+        $certificatePath = storage_path("app/public/certificates/certificate_{$this->id}_{$memberId}.png");
+        
+        return file_exists($certificatePath);
+    }
+
+    /**
+     * Check if receipt exists
+     */
+    public function hasReceipt()
+    {
+        if (!$this->payment_verified) {
+            return false;
+        }
+        
+        $memberId = $this->member_id ?? $this->parent_member_id;
+        $receiptPath = storage_path("app/public/receipts/receipt_{$this->id}_{$memberId}.png");
+        
+        return file_exists($receiptPath);
+    }
+
+
+     /**
+     * Get membership expiry date
+     */
+    public function getExpiryDateAttribute()
+    {
+        $originalMember = $this->member_id ? $this : $this->parent;
+        if (!$originalMember) {
+            $originalMember = $this;
+        }
+        return $originalMember->created_at->addYear();
+    }
+
+    /**
+     * Get days until expiry
+     */
+    public function getDaysLeftAttribute()
+    {
+        $expiryDate = $this->expiry_date;
+        $days = now()->diffInDays($expiryDate, false);
+        return $days > 0 ? $days : 0;
+    }
+
+    /**
+     * Get members expiring in X days
+     */
+    public static function getMembersExpiringInDays($days)
+    {
+        $expiryDate = now()->addDays($days)->startOfDay();
+        
+        return self::where('payment_verified', true)
+            ->whereNotNull('member_id')
+            ->where(function($query) use ($expiryDate) {
+                $query->whereNull('parent_member_id')
+                    ->whereDate('created_at', '<=', $expiryDate->copy()->subYear()->endOfDay())
+                    ->whereDate('created_at', '>=', $expiryDate->copy()->subYear()->subDays(1)->startOfDay());
+            })
+            ->orWhere(function($query) use ($expiryDate) {
+                $query->whereNotNull('parent_member_id')
+                    ->whereDate('created_at', '<=', $expiryDate->copy()->subYear()->endOfDay())
+                    ->whereDate('created_at', '>=', $expiryDate->copy()->subYear()->subDays(1)->startOfDay());
+            })
+            ->get();
+    }
+
 
     // Get payment mode display name
     public function getPaymentModeDisplayAttribute()
@@ -181,7 +331,7 @@ class Registration extends Model
         return $modes[$this->payment_mode] ?? $this->payment_mode;
     }
 
-    // Get registration type display name - UPDATED with all types
+    // Get registration type display name
     public function getRegistrationTypeDisplayAttribute()
     {
         $types = [
@@ -276,7 +426,7 @@ class Registration extends Model
     }
 
     /**
-     * Generate a new secure password (returns plaintext)
+     * Generate a new secure password
      */
     public static function generateNewPassword($length = 12): string
     {
@@ -288,18 +438,15 @@ class Registration extends Model
         $allCharacters = $uppercase . $lowercase . $numbers . $symbols;
         $password = '';
         
-        // Ensure at least one character from each set
         $password .= $uppercase[random_int(0, strlen($uppercase) - 1)];
         $password .= $lowercase[random_int(0, strlen($lowercase) - 1)];
         $password .= $numbers[random_int(0, strlen($numbers) - 1)];
         $password .= $symbols[random_int(0, strlen($symbols) - 1)];
         
-        // Fill the rest with random characters
         for ($i = 4; $i < $length; $i++) {
             $password .= $allCharacters[random_int(0, strlen($allCharacters) - 1)];
         }
         
-        // Shuffle the password to randomize character positions
         return str_shuffle($password);
     }
 

@@ -127,6 +127,13 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        'renewal_reminders' => [
+        'driver' => 'daily',
+        'path' => storage_path('logs/renewal-reminders.log'),
+        'level' => env('LOG_LEVEL', 'info'),
+        'days' => 30,
+    ],
+
     ],
 
 ];

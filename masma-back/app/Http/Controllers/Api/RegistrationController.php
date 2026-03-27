@@ -7,6 +7,8 @@ use App\Models\Registration;
 use App\Mail\RegistrationNotification;
 use App\Mail\UserCredentials;
 use App\Mail\PaymentVerificationNotification;
+use App\Mail\MembershipConfirmation;
+use App\Services\CertificateService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
@@ -103,7 +105,7 @@ class RegistrationController extends Controller
         $password = env('SMS_PASSWORD');
         $senderId = env('SMS_SENDER_ID');
 
-        $message = "Your registration form has been submitted successfully. After payment reconciliation, the admin team will contact you. – MASMA";
+        $message = "FINAL CALL! Last chance to book a stall MASMA Renewable Energy Expo 2026 Stall booking closing soon. Call now 8999316256 or visit https://masmaexpo.in Team MASMA";
 
         $url = "https://www.smsjust.com/sms/user/urlsms.php?" . http_build_query([
             'username' => $username,
@@ -176,7 +178,7 @@ class RegistrationController extends Controller
     }
     
     
-    public function store(Request $request)
+   public function store(Request $request)
 {
     // Generate a unique submission token based on key fields
     $submissionToken = $this->generateSubmissionToken($request);
@@ -295,9 +297,33 @@ class RegistrationController extends Controller
         unset($validated['visiting_card']);
         unset($validated['payment_screenshot']);
 
-        // ========== MEMBER ID LOGIC ==========
+        // ========== CHECK FOR EXISTING ACTIVE MEMBERSHIP ==========
         $isRenewal = Registration::isRenewalType($validated['registration_type']);
         $parentMemberId = null;
+        
+        // Check if person already exists with verified payment
+        $existingMember = Registration::where(function($query) use ($validated) {
+                $query->where('office_email', $validated['office_email'])
+                    ->orWhere('mobile', $validated['mobile']);
+            })
+            ->where('payment_verified', true) // Only consider verified members
+            ->whereNotNull('member_id') // Must have member_id
+            ->orderBy('created_at', 'desc')
+            ->first();
+        
+        if ($existingMember && !$isRenewal) {
+            // Existing member trying to register as new instead of renewal
+            DB::rollBack();
+            Cache::forget($cacheKey);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'You are already a member. Please use the renewal option instead of new registration.',
+                'error' => 'existing_member',
+                'existing_member_id' => $existingMember->member_id,
+                'renewal_required' => true
+            ], Response::HTTP_BAD_REQUEST);
+        }
         
         if ($isRenewal) {
             // For renewals, find existing member by email or mobile
@@ -307,10 +333,22 @@ class RegistrationController extends Controller
             );
             
             if ($existingMember && $existingMember->member_id) {
-                // IMPORTANT: For renewals:
-                // 1. DO NOT set member_id (leave it null)
-                // 2. Set parent_member_id to link to original member
-                // 3. Remove member_id from validated array if it exists
+                // Check if there's already a pending renewal for this member
+                $pendingRenewal = Registration::where('parent_member_id', $existingMember->member_id)
+                    ->where('payment_verified', false)
+                    ->where('created_at', '>=', now()->subDays(30))
+                    ->first();
+                
+                if ($pendingRenewal) {
+                    DB::rollBack();
+                    Cache::forget($cacheKey);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You already have a pending renewal request. Please wait for verification.',
+                        'error' => 'pending_renewal_exists'
+                    ], Response::HTTP_BAD_REQUEST);
+                }
                 
                 $parentMemberId = $existingMember->member_id;
                 
@@ -331,7 +369,7 @@ class RegistrationController extends Controller
                 
                 return response()->json([
                     'success' => false,
-                    'message' => 'No existing membership found for renewal. Please register as a new member or contact support.',
+                    'message' => 'No existing membership found for renewal. Please register as a new member.',
                     'error' => 'existing_member_not_found'
                 ], Response::HTTP_BAD_REQUEST);
             }
@@ -368,16 +406,16 @@ class RegistrationController extends Controller
             Log::error('Failed to send registration notification email: ' . $e->getMessage());
         }
 
-        // Send WhatsApp and SMS confirmation to user
+         // Send WhatsApp and SMS confirmation to user
         // $messageResults = $this->sendConfirmationMessages($registration);
-        
+
         return response()->json([
             'success' => true,
             'message' => $isRenewal ? 'Membership renewal submitted successfully!' : 'Registration submitted successfully!',
             'data' => $registration,
             'member_id' => $isRenewal ? $parentMemberId : $registration->member_id,
             'is_renewal' => $isRenewal,
-            // 'notifications' => [
+            //  'notifications' => [
             //     'whatsapp' => $messageResults['whatsapp'] ?? null,
             //     'sms' => $messageResults['sms'] ?? null
             // ]
@@ -414,12 +452,20 @@ class RegistrationController extends Controller
         return hash('sha256', implode('|', $data));
     }
 
+    protected $certificateService;
+
+    public function __construct(CertificateService $certificateService)
+    {
+        $this->certificateService = $certificateService;
+    }
+
     // Verify payment (admin function)
     public function verifyPayment(Request $request, Registration $registration)
     {
         $request->validate([
             'payment_verified' => 'required|boolean',
             'payment_remarks' => 'nullable|string|max:500',
+            'send_credentials' => 'sometimes|boolean',
         ]);
 
         try {
@@ -435,14 +481,48 @@ class RegistrationController extends Controller
 
             DB::commit();
 
-            // Send email notification to user about payment verification
-            try {
-                Mail::to($registration->office_email)
-                    ->send(new PaymentVerificationNotification($registration, $request->payment_verified));
+            // If payment is verified, send confirmation email with certificate and credentials
+            if ($request->payment_verified) {
+                try {
+                    // Generate or get password
+                    $plainPassword = null;
+                    $sendCredentials = $request->send_credentials ?? true;
                     
-                \Log::info('Payment verification email sent to: ' . $registration->office_email);
-            } catch (\Exception $e) {
-                \Log::error('Failed to send payment verification email: ' . $e->getMessage());
+                    if ($sendCredentials && !$registration->generated_password) {
+                        $plainPassword = Registration::generateNewPassword();
+                        $hashedPassword = Registration::hashPassword($plainPassword);
+                        
+                        $registration->update([
+                            'generated_password' => $hashedPassword,
+                            'credentials_sent' => true,
+                            'credentials_sent_at' => now(),
+                        ]);
+                    }
+                    
+                    // Generate membership certificate
+                    $certificatePath = $this->certificateService->generateCertificate($registration);
+                    
+                    // Generate payment receipt
+                    $receiptPath = $this->certificateService->generatePaymentReceipt($registration);
+                    
+                    // Send confirmation email with attachments
+                    Mail::to($registration->office_email)
+                        ->send(new MembershipConfirmation(
+                            $registration, 
+                            $certificatePath, 
+                            $receiptPath,
+                            $plainPassword
+                        ));
+                    
+                    Log::info('Membership confirmation email sent to: ' . $registration->office_email, [
+                        'member_id' => $registration->member_id ?? $registration->parent_member_id,
+                        'is_renewal' => $registration->isRenewal()
+                    ]);
+                    
+                } catch (\Exception $e) {
+                    Log::error('Failed to send membership confirmation email: ' . $e->getMessage());
+                    // Don't throw error - payment verification is still successful
+                }
             }
 
             $status = $request->payment_verified ? 'verified' : 'rejected';
@@ -455,7 +535,7 @@ class RegistrationController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Payment verification error: ' . $e->getMessage());
+            Log::error('Payment verification error: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
