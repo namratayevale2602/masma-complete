@@ -20,7 +20,16 @@ import {
 const BeMember = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [successData, setSuccessData] = useState({ memberId: null, isRenewal: false });
+      //  Code for store member_id on renewal for first time feel form because its first year to online registration
+
+  // const [successData, setSuccessData] = useState({ memberId: null, isRenewal: false });
+  // end code
+  const [successData, setSuccessData] = useState({ 
+    memberId: null, 
+    isRenewal: false,
+    fallbackToNew: false,
+    message: '' 
+});
   const [formData, setFormData] = useState({
     applicant_name: "",
     date_of_birth: "",
@@ -295,31 +304,35 @@ const BeMember = () => {
     resetForm();
   };
 
-  const handleSubmit = async (e) => {
+
+      //  Code for store member_id on renewal for first time feel form because its first year to online registration
+
+
+      const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (isSubmitting) {
-      setMessage({
-        type: "warning",
-        text: "Please wait, your submission is already being processed..."
-      });
-      return;
+        setMessage({
+            type: "warning",
+            text: "Please wait, your submission is already being processed..."
+        });
+        return;
     }
     
     if (!validateStep()) {
-      setMessage({
-        type: "error",
-        text: "Please fill in all required fields.",
-      });
-      return;
+        setMessage({
+            type: "error",
+            text: "Please fill in all required fields.",
+        });
+        return;
     }
 
     if (!formData.declaration) {
-      setMessage({
-        type: "error",
-        text: "You must accept the declaration to proceed.",
-      });
-      return;
+        setMessage({
+            type: "error",
+            text: "You must accept the declaration to proceed.",
+        });
+        return;
     }
 
     setIsSubmitting(true);
@@ -327,143 +340,346 @@ const BeMember = () => {
     setMessage({ type: "", text: "" });
 
     try {
-      const submitData = new FormData();
+        const submitData = new FormData();
 
-      Object.keys(formData).forEach((key) => {
-        if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
-          submitData.append(key, formData[key]);
-        } else if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
-          if (key === "declaration") {
-            submitData.append(key, formData[key] ? "1" : "0");
-          } else {
-            submitData.append(key, formData[key]);
-          }
-        }
-      });
+        Object.keys(formData).forEach((key) => {
+            if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
+                submitData.append(key, formData[key]);
+            } else if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
+                if (key === "declaration") {
+                    submitData.append(key, formData[key] ? "1" : "0");
+                } else {
+                    submitData.append(key, formData[key]);
+                }
+            }
+        });
 
-      const response = await axiosInstance.post("/registrations", submitData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+        const response = await axiosInstance.post("/registrations", submitData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+            },
+        });
 
-      // Store member ID from response
-      const memberId = response.data.member_id;
-      const isRenewal = response.data.is_renewal;
-      
-      setSuccessData({ memberId, isRenewal });
-      setShowSuccess(true);
-      
-      // Don't reset form immediately, wait for modal close
-      // resetForm() will be called in handleCloseSuccess
+        // Store member ID from response
+        const memberId = response.data.member_id;
+        const isRenewal = response.data.is_renewal;
+        const fallbackToNew = response.data.fallback_to_new;
+        
+        setSuccessData({ 
+            memberId, 
+            isRenewal,
+            fallbackToNew,
+            message: response.data.message 
+        });
+        setShowSuccess(true);
+        
+        // Don't reset form immediately, wait for modal close
 
     } catch (error) {
-      console.error("Registration error:", error);
-      let errorMessage = "Failed to submit registration. Please try again.";
+        console.error("Registration error:", error);
+        let errorMessage = "Failed to submit registration. Please try again.";
 
-      if (error.response?.data?.errors) {
-        const errors = error.response.data.errors;
-        errorMessage = Object.values(errors).flat().join(", ");
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.response?.data?.duplicate) {
-        errorMessage = error.response.data.message || "Duplicate submission detected. Please check your email for confirmation.";
-      } else if (error.code === 'ERR_NETWORK') {
-        errorMessage = "Network error. Please check your internet connection and try again.";
-      }
+        if (error.response?.data?.errors) {
+            const errors = error.response.data.errors;
+            errorMessage = Object.values(errors).flat().join(", ");
+        } else if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.response?.data?.duplicate) {
+            errorMessage = error.response.data.message || "Duplicate submission detected. Please check your email for confirmation.";
+        } else if (error.code === 'ERR_NETWORK') {
+            errorMessage = "Network error. Please check your internet connection and try again.";
+        }
 
-      setMessage({
-        type: "error",
-        text: errorMessage,
-      });
-      
-      setIsSubmitting(false);
-      setLoading(false);
+        setMessage({
+            type: "error",
+            text: errorMessage,
+        });
+        
+        setIsSubmitting(false);
+        setLoading(false);
     }
-  };
+};
+
+
+      // End Code for store member_id on renewal for first time feel form because its first year to online registration
+
+  //   const handleSubmit = async (e) => {
+  //   e.preventDefault();
+    
+  //   if (isSubmitting) {
+  //     setMessage({
+  //       type: "warning",
+  //       text: "Please wait, your submission is already being processed..."
+  //     });
+  //     return;
+  //   }
+    
+  //   if (!validateStep()) {
+  //     setMessage({
+  //       type: "error",
+  //       text: "Please fill in all required fields.",
+  //     });
+  //     return;
+  //   }
+
+  //   if (!formData.declaration) {
+  //     setMessage({
+  //       type: "error",
+  //       text: "You must accept the declaration to proceed.",
+  //     });
+  //     return;
+  //   }
+
+  //   setIsSubmitting(true);
+  //   setLoading(true);
+  //   setMessage({ type: "", text: "" });
+
+  //   try {
+  //     const submitData = new FormData();
+
+  //     Object.keys(formData).forEach((key) => {
+  //       if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
+  //         submitData.append(key, formData[key]);
+  //       } else if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
+  //         if (key === "declaration") {
+  //           submitData.append(key, formData[key] ? "1" : "0");
+  //         } else {
+  //           submitData.append(key, formData[key]);
+  //         }
+  //       }
+  //     });
+
+  //     const response = await axiosInstance.post("/registrations", submitData, {
+  //       headers: {
+  //         "Content-Type": "multipart/form-data",
+  //       },
+  //     });
+
+  //     // Store member ID from response
+  //     const memberId = response.data.member_id;
+  //     const isRenewal = response.data.is_renewal;
+      
+  //     setSuccessData({ memberId, isRenewal });
+  //     setShowSuccess(true);
+      
+  //     // Don't reset form immediately, wait for modal close
+  //     // resetForm() will be called in handleCloseSuccess
+
+  //   } catch (error) {
+  //     console.error("Registration error:", error);
+  //     let errorMessage = "Failed to submit registration. Please try again.";
+
+  //     if (error.response?.data?.errors) {
+  //       const errors = error.response.data.errors;
+  //       errorMessage = Object.values(errors).flat().join(", ");
+  //     } else if (error.response?.data?.message) {
+  //       errorMessage = error.response.data.message;
+  //     } else if (error.response?.data?.duplicate) {
+  //       errorMessage = error.response.data.message || "Duplicate submission detected. Please check your email for confirmation.";
+  //     } else if (error.code === 'ERR_NETWORK') {
+  //       errorMessage = "Network error. Please check your internet connection and try again.";
+  //     }
+
+  //     setMessage({
+  //       type: "error",
+  //       text: errorMessage,
+  //     });
+      
+  //     setIsSubmitting(false);
+  //     setLoading(false);
+  //   }
+  // };
+
+      //  Code for store member_id on renewal for first time feel form because its first year to online registration
+
+  // Success Modal Component - Updated for fallback scenario
+const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) => (
+    <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+        onClick={onClose}
+    >
+        <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+        >
+            <button
+                onClick={onClose}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+                <X className="h-6 w-6" />
+            </button>
+
+            <div className="text-center">
+                <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                    className={`mx-auto flex items-center justify-center h-20 w-20 rounded-full mb-6 ${
+                        fallbackToNew ? 'bg-yellow-100' : 'bg-green-100'
+                    }`}
+                >
+                    <CheckCircle className={`h-12 w-12 ${
+                        fallbackToNew ? 'text-yellow-600' : 'text-green-600'
+                    }`} />
+                </motion.div>
+                
+                <motion.h2
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-2xl font-bold text-gray-900 mb-3"
+                >
+                    {message || (isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!")}
+                </motion.h2>
+                
+                
+                
+                {memberId && (
+                    <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.4 }}
+                        className={`border rounded-lg p-4 mb-6 ${
+                            fallbackToNew ? 'bg-yellow-50 border-yellow-200' : 'bg-blue-50 border-blue-200'
+                        }`}
+                    >
+                        <p className={`text-sm mb-1 ${
+                            fallbackToNew ? 'text-yellow-600' : 'text-blue-600'
+                        }`}>
+                            Your Member ID
+                        </p>
+                        <p className={`text-2xl font-bold font-mono ${
+                            fallbackToNew ? 'text-yellow-800' : 'text-blue-800'
+                        }`}>
+                            {memberId}
+                        </p>
+                        <p className={`text-xs mt-2 ${
+                            fallbackToNew ? 'text-yellow-600' : 'text-blue-600'
+                        }`}>
+                            Please save this ID for future reference
+                        </p>
+                    </motion.div>
+                )}
+                
+                <motion.p
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.5 }}
+                    className="text-gray-600 mb-6"
+                >
+                    {fallbackToNew 
+                        ? "Your new membership application has been submitted successfully. We will review your details and get back to you soon."
+                        : `Thank you for ${isRenewal ? "renewing your membership" : "registering"}. 
+                        Your application has been submitted successfully. 
+                        We will review your details and get back to you soon.`
+                    }
+                </motion.p>
+                
+                <motion.button
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.6 }}
+                    onClick={onClose}
+                    className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
+                >
+                    Close
+                </motion.button>
+            </div>
+        </motion.div>
+    </motion.div>
+);
+      // End Code for store member_id on renewal for first time feel form because its first year to online registration
+
 
   // Success Modal Component - Defined outside to prevent re-renders
-  const SuccessModal = ({ memberId, isRenewal, onClose }) => (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.8, opacity: 0 }}
-        transition={{ type: "spring", damping: 20, stiffness: 300 }}
-        className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          <X className="h-6 w-6" />
-        </button>
+  // const SuccessModal = ({ memberId, isRenewal, onClose }) => (
+  //   <motion.div
+  //     initial={{ opacity: 0 }}
+  //     animate={{ opacity: 1 }}
+  //     exit={{ opacity: 0 }}
+  //     className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+  //     onClick={onClose}
+  //   >
+  //     <motion.div
+  //       initial={{ scale: 0.8, opacity: 0 }}
+  //       animate={{ scale: 1, opacity: 1 }}
+  //       exit={{ scale: 0.8, opacity: 0 }}
+  //       transition={{ type: "spring", damping: 20, stiffness: 300 }}
+  //       className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
+  //       onClick={(e) => e.stopPropagation()}
+  //     >
+  //       <button
+  //         onClick={onClose}
+  //         className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+  //       >
+  //         <X className="h-6 w-6" />
+  //       </button>
 
-        <div className="text-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6"
-          >
-            <CheckCircle className="h-12 w-12 text-green-600" />
-          </motion.div>
+  //       <div className="text-center">
+  //         <motion.div
+  //           initial={{ scale: 0 }}
+  //           animate={{ scale: 1 }}
+  //           transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+  //           className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6"
+  //         >
+  //           <CheckCircle className="h-12 w-12 text-green-600" />
+  //         </motion.div>
           
-          <motion.h2
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="text-2xl font-bold text-gray-900 mb-3"
-          >
-            {isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!"}
-          </motion.h2>
+  //         <motion.h2
+  //           initial={{ y: 20, opacity: 0 }}
+  //           animate={{ y: 0, opacity: 1 }}
+  //           transition={{ delay: 0.3 }}
+  //           className="text-2xl font-bold text-gray-900 mb-3"
+  //         >
+  //           {isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!"}
+  //         </motion.h2>
           
-          {memberId && (
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6"
-            >
-              <p className="text-sm text-blue-600 mb-1">Your Member ID</p>
-              <p className="text-2xl font-bold text-blue-800 font-mono">{memberId}</p>
-              <p className="text-xs text-blue-600 mt-2">
-                Please save this ID for future reference
-              </p>
-            </motion.div>
-          )}
+  //         {memberId && (
+  //           <motion.div
+  //             initial={{ y: 20, opacity: 0 }}
+  //             animate={{ y: 0, opacity: 1 }}
+  //             transition={{ delay: 0.4 }}
+  //             className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6"
+  //           >
+  //             <p className="text-sm text-blue-600 mb-1">Your Member ID</p>
+  //             <p className="text-2xl font-bold text-blue-800 font-mono">{memberId}</p>
+  //             <p className="text-xs text-blue-600 mt-2">
+  //               Please save this ID for future reference
+  //             </p>
+  //           </motion.div>
+  //         )}
           
-          <motion.p
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="text-gray-600 mb-6"
-          >
-            Thank you for {isRenewal ? "renewing your membership" : "registering"}. 
-            Your application has been submitted successfully. 
-            We will review your details and get back to you soon.
-          </motion.p>
+  //         <motion.p
+  //           initial={{ y: 20, opacity: 0 }}
+  //           animate={{ y: 0, opacity: 1 }}
+  //           transition={{ delay: 0.5 }}
+  //           className="text-gray-600 mb-6"
+  //         >
+  //           Thank you for {isRenewal ? "renewing your membership" : "registering"}. 
+  //           Your application has been submitted successfully. 
+  //           We will review your details and get back to you soon.
+  //         </motion.p>
           
-          <motion.button
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            onClick={onClose}
-            className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
-          >
-            Close
-          </motion.button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
+  //         <motion.button
+  //           initial={{ y: 20, opacity: 0 }}
+  //           animate={{ y: 0, opacity: 1 }}
+  //           transition={{ delay: 0.6 }}
+  //           onClick={onClose}
+  //           className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
+  //         >
+  //           Close
+  //         </motion.button>
+  //       </div>
+  //     </motion.div>
+  //   </motion.div>
+  // );
 
   // Step Indicator Component
   const StepIndicator = () => (
@@ -1042,11 +1258,22 @@ const BeMember = () => {
     <div className="min-h-screen bg-gray-50 py-8 pt-40 px-4 relative">
       <AnimatePresence>
         {showSuccess && (
+              //  Code for store member_id on renewal for first time feel form because its first year to online registration
+
           <SuccessModal 
             memberId={successData.memberId}
             isRenewal={successData.isRenewal}
+            fallbackToNew={successData.fallbackToNew}
+            message={successData.message}
             onClose={handleCloseSuccess}
           />
+              // End Code for store member_id on renewal for first time feel form because its first year to online registration
+
+          // <SuccessModal 
+          //   memberId={successData.memberId}
+          //   isRenewal={successData.isRenewal}
+          //   onClose={handleCloseSuccess}
+          // />
         )}
       </AnimatePresence>
 

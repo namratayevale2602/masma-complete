@@ -60,7 +60,7 @@ const VisitorCard = () => {
 
         // Try multiple endpoints
         const endpoints = [
-          `http://localhost:8000/api/visitors/${id}/view`,
+          `https://server.masma.in/api/visitors/${id}/view`,
           `http://192.168.1.38:8000/api/visitors/${id}/view`,
         ];
 

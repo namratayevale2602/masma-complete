@@ -60,5 +60,5 @@ The Laravel framework is open-sourced software licensed under the [MIT license](
 
 php artisan serve --host=localhost --port=8000
 
-
-// php artisan app:assign-member-ids run for add member_id
+// php artisan app:assign-member-ids --dry-run
+// php artisan app:assign-member-ids --force

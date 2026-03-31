@@ -4,7 +4,7 @@ import axios from "axios";
 
 // Create main API instance for registration
 const registrationApi = axios.create({
-  baseURL: "http://localhost:8000/api/registration",
+  baseURL: "https://server.masma.in/api/registration",
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
@@ -15,7 +15,7 @@ const registrationApi = axios.create({
 
 // Create CSRF-specific instance
 const csrfApi = axios.create({
-  baseURL: "http://localhost:8000",
+  baseURL: "https://server.masma.in",
   withCredentials: true,
 });
 
