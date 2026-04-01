@@ -62,3 +62,5 @@ php artisan serve --host=localhost --port=8000
 
 // php artisan app:assign-member-ids --dry-run
 // php artisan app:assign-member-ids --force
+
+php artisan migrate --path=/database/migrations/2026_03_25_121858_create_career_applications_table.php

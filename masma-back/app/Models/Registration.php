@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Hash;
 
 class Registration extends Model
 {
-    protected $fillable = [
+      protected $fillable = [
         'applicant_name',
         'date_of_birth',
         'organization',
@@ -102,6 +102,59 @@ class Registration extends Model
     }
     
     /**
+     * Convert renewal registration type to new registration type
+     */
+    public static function convertRenewalToNewType($renewalType)
+    {
+        $conversionMap = [
+            'renew_epc_classic' => 'epc_classic',
+            'renew_student' => 'student',
+            'renew_dealer_distributor' => 'dealer_distributor',
+            'renew_silver_corporate' => 'silver_corporate',
+            'renew_gold_corporate' => 'gold_corporate',
+        ];
+        
+        return $conversionMap[$renewalType] ?? 'epc_classic';
+    }
+    
+    /**
+     * Get registration amount based on type
+     */
+    public static function getRegistrationAmount($registrationType)
+    {
+        $amounts = [
+            'epc_classic' => 3000,
+            'student' => 1000,
+            'dealer_distributor' => 5500,
+            'silver_corporate' => 10500,
+            'gold_corporate' => 20500,
+        ];
+        
+        return $amounts[$registrationType] ?? 0;
+    }
+    
+    /**
+     * Get registration type display name
+     */
+    public function getRegistrationTypeDisplayAttribute()
+    {
+        $types = [
+            'epc_classic' => 'EPC Classic',
+            'renew_epc_classic' => 'Renew EPC Classic',
+            'student' => 'Student',
+            'renew_student' => 'Renew Student',
+            'dealer_distributor' => 'Dealer/Distributor',
+            'renew_dealer_distributor' => 'Renew Dealer/Distributor',
+            'silver_corporate' => 'Silver Corporate',
+            'renew_silver_corporate' => 'Renew Silver Corporate',
+            'gold_corporate' => 'Gold Corporate',
+            'renew_gold_corporate' => 'Renew Gold Corporate',
+        ];
+
+        return $types[$this->registration_type] ?? $this->registration_type;
+    }
+    
+    /**
      * Find existing member by email or mobile for renewal
      */
     public static function findExistingMemberForRenewal($email, $mobile)
@@ -147,34 +200,34 @@ class Registration extends Model
     /**
      * Convert renewal registration type to new registration type
      */
-    public static function convertRenewalToNewType($renewalType)
-    {
-        $conversionMap = [
-            'renew_epc_classic' => 'epc_classic',
-            'renew_student' => 'student',
-            'renew_dealer_distributor' => 'dealer_distributor',
-            'renew_silver_corporate' => 'silver_corporate',
-            'renew_gold_corporate' => 'gold_corporate',
-        ];
+    // public static function convertRenewalToNewType($renewalType)
+    // {
+    //     $conversionMap = [
+    //         'renew_epc_classic' => 'epc_classic',
+    //         'renew_student' => 'student',
+    //         'renew_dealer_distributor' => 'dealer_distributor',
+    //         'renew_silver_corporate' => 'silver_corporate',
+    //         'renew_gold_corporate' => 'gold_corporate',
+    //     ];
         
-        return $conversionMap[$renewalType] ?? 'epc_classic';
-    }
+    //     return $conversionMap[$renewalType] ?? 'epc_classic';
+    // }
     
     /**
      * Get registration amount based on type
      */
-    public static function getRegistrationAmount($registrationType)
-    {
-        $amounts = [
-            'epc_classic' => 3000,
-            'student' => 1000,
-            'dealer_distributor' => 5500,
-            'silver_corporate' => 10500,
-            'gold_corporate' => 20500,
-        ];
+    // public static function getRegistrationAmount($registrationType)
+    // {
+    //     $amounts = [
+    //         'epc_classic' => 3000,
+    //         'student' => 1000,
+    //         'dealer_distributor' => 5500,
+    //         'silver_corporate' => 10500,
+    //         'gold_corporate' => 20500,
+    //     ];
         
-        return $amounts[$registrationType] ?? 0;
-    }
+    //     return $amounts[$registrationType] ?? 0;
+    // }
     
     /**
      * Check if member exists and has valid membership
@@ -404,23 +457,23 @@ class Registration extends Model
     }
 
     // Get registration type display name
-    public function getRegistrationTypeDisplayAttribute()
-    {
-        $types = [
-            'epc_classic' => 'EPC Classic',
-            'renew_epc_classic' => 'Renew EPC Classic',
-            'student' => 'Student',
-            'renew_student' => 'Renew Student',
-            'dealer_distributor' => 'Dealer/Distributor',
-            'renew_dealer_distributor' => 'Renew Dealer/Distributor',
-            'silver_corporate' => 'Silver Corporate',
-            'renew_silver_corporate' => 'Renew Silver Corporate',
-            'gold_corporate' => 'Gold Corporate',
-            'renew_gold_corporate' => 'Renew Gold Corporate',
-        ];
+    // public function getRegistrationTypeDisplayAttribute()
+    // {
+    //     $types = [
+    //         'epc_classic' => 'EPC Classic',
+    //         'renew_epc_classic' => 'Renew EPC Classic',
+    //         'student' => 'Student',
+    //         'renew_student' => 'Renew Student',
+    //         'dealer_distributor' => 'Dealer/Distributor',
+    //         'renew_dealer_distributor' => 'Renew Dealer/Distributor',
+    //         'silver_corporate' => 'Silver Corporate',
+    //         'renew_silver_corporate' => 'Renew Silver Corporate',
+    //         'gold_corporate' => 'Gold Corporate',
+    //         'renew_gold_corporate' => 'Renew Gold Corporate',
+    //     ];
 
-        return $types[$this->registration_type] ?? $this->registration_type;
-    }
+    //     return $types[$this->registration_type] ?? $this->registration_type;
+    // }
 
     // Get organization type display name
     public function getOrganizationTypeDisplayAttribute()

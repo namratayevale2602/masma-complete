@@ -14,22 +14,28 @@ import {
   CreditCard,
   FileText,
   Check,
-  X
+  X,
+  AlertCircle,
+  AlertTriangle,
+  Info
 } from "lucide-react";
 
 const BeMember = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccess, setShowSuccess] = useState(false);
-      //  Code for store member_id on renewal for first time feel form because its first year to online registration
-
-  // const [successData, setSuccessData] = useState({ memberId: null, isRenewal: false });
-  // end code
+  const [showError, setShowError] = useState(false);
+  const [errorData, setErrorData] = useState({
+    title: "",
+    message: "",
+    details: [],
+    existingRecord: null
+  });
   const [successData, setSuccessData] = useState({ 
     memberId: null, 
     isRenewal: false,
     fallbackToNew: false,
     message: '' 
-});
+  });
   const [formData, setFormData] = useState({
     applicant_name: "",
     date_of_birth: "",
@@ -189,7 +195,6 @@ const BeMember = () => {
           [name]: file,
         }));
         
-        // Update file info
         setFileInfo((prev) => ({
           ...prev,
           [name]: { name: file.name, size: formatFileSize(file.size) }
@@ -236,7 +241,7 @@ const BeMember = () => {
       case 5:
         return formData.membership_reference_1 && formData.membership_reference_2;
       case 6:
-        return formData.registration_type && formData.payment_mode && formData.declaration;
+        return formData.registration_type && formData.payment_mode && formData.declaration && formData.payment_screenshot;
       default:
         return true;
     }
@@ -304,35 +309,129 @@ const BeMember = () => {
     resetForm();
   };
 
+  const handleCloseError = () => {
+    setShowError(false);
+    setErrorData({ title: "", message: "", details: [], existingRecord: null });
+  };
 
-      //  Code for store member_id on renewal for first time feel form because its first year to online registration
+  const parseErrorMessage = (error) => {
+    let title = "Registration Failed";
+    let message = "There was an error processing your registration. Please check the details below:";
+    let details = [];
+    let existingRecord = null;
 
+    // Handle duplicate member ID error
+    if (error.response?.data?.error === 'duplicate_member' || 
+        (error.response?.data?.message?.includes('duplicate') && error.response?.data?.message?.includes('member'))) {
+      title = "Duplicate Member Detected";
+      message = "A member with the same contact details already exists. Please use the renewal option.";
+      
+      if (error.response?.data?.existing_record) {
+        existingRecord = error.response.data.existing_record;
+        details.push(`Existing Member ID: ${existingRecord.member_id}`);
+        details.push(`Registration Type: ${existingRecord.registration_type}`);
+        details.push(`Submission Date: ${new Date(existingRecord.created_at).toLocaleString()}`);
+        details.push(`Status: ${existingRecord.payment_verified ? 'Verified' : 'Pending Verification'}`);
+      }
+    }
+    // Handle validation errors
+    else if (error.response?.data?.errors) {
+      title = "Validation Error";
+      message = "Please correct the following errors:";
+      details = Object.entries(error.response.data.errors).map(([field, errors]) => {
+        const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `${fieldName}: ${errors.join(', ')}`;
+      });
+    }
+    // Handle existing member error
+    else if (error.response?.data?.error === 'existing_member') {
+      title = "Existing Member Detected";
+      message = "You are already registered as a member.";
+      
+      if (error.response?.data?.existing_member_id) {
+        details.push(`Member ID: ${error.response.data.existing_member_id}`);
+        details.push(`Please use the renewal option instead of new registration.`);
+      }
+    }
+    // Handle pending renewal error
+    else if (error.response?.data?.error === 'pending_renewal_exists') {
+      title = "Pending Renewal Detected";
+      message = "You already have a pending renewal request.";
+      details.push(`Your previous renewal request is still being processed.`);
+      details.push(`Please wait for verification before submitting another request.`);
+      
+      if (error.response?.data?.pending_renewal_id) {
+        details.push(`Pending Request ID: ${error.response.data.pending_renewal_id}`);
+      }
+    }
+    // Handle duplicate submission
+    else if (error.response?.data?.duplicate) {
+      title = "Duplicate Submission";
+      message = error.response.data.message || "You have already submitted this form recently.";
+      details.push(`Please check your email for confirmation.`);
+      details.push(`If you haven't received confirmation, please wait a few minutes and try again.`);
+    }
+    // Handle network errors
+    else if (error.code === 'ERR_NETWORK') {
+      title = "Network Error";
+      message = "Unable to connect to the server.";
+      details.push(`Please check your internet connection.`);
+      details.push(`If the problem persists, please contact support.`);
+    }
+    // Handle generic errors with message
+    else if (error.response?.data?.message) {
+      message = error.response.data.message;
+      
+      // Check for specific error patterns
+      if (message.includes('Duplicate entry') || message.includes('duplicate')) {
+        title = "Duplicate Entry Error";
+        details.push(`The system detected duplicate information.`);
+        details.push(`This usually happens when you've already submitted a registration.`);
+      }
+    }
+    // Handle unknown errors
+    else {
+      message = error.message || "An unexpected error occurred. Please try again.";
+      details.push(`Error Type: ${error.code || 'Unknown'}`);
+      details.push(`Please contact support if this issue persists.`);
+    }
 
-      const handleSubmit = async (e) => {
+    return { title, message, details, existingRecord };
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (isSubmitting) {
-        setMessage({
-            type: "warning",
-            text: "Please wait, your submission is already being processed..."
-        });
-        return;
+      setMessage({
+        type: "warning",
+        text: "Please wait, your submission is already being processed..."
+      });
+      return;
     }
     
     if (!validateStep()) {
-        setMessage({
-            type: "error",
-            text: "Please fill in all required fields.",
-        });
-        return;
+      setMessage({
+        type: "error",
+        text: "Please fill in all required fields.",
+      });
+      return;
     }
 
     if (!formData.declaration) {
-        setMessage({
-            type: "error",
-            text: "You must accept the declaration to proceed.",
-        });
-        return;
+      setMessage({
+        type: "error",
+        text: "You must accept the declaration to proceed.",
+      });
+      return;
+    }
+
+    if (!formData.payment_screenshot) {
+      setMessage({
+        type: "error",
+        text: "Please upload a payment screenshot.",
+      });
+      return;
     }
 
     setIsSubmitting(true);
@@ -340,346 +439,271 @@ const BeMember = () => {
     setMessage({ type: "", text: "" });
 
     try {
-        const submitData = new FormData();
+      const submitData = new FormData();
 
-        Object.keys(formData).forEach((key) => {
-            if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
-                submitData.append(key, formData[key]);
-            } else if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
-                if (key === "declaration") {
-                    submitData.append(key, formData[key] ? "1" : "0");
-                } else {
-                    submitData.append(key, formData[key]);
-                }
-            }
-        });
-
-        const response = await axiosInstance.post("/registrations", submitData, {
-            headers: {
-                "Content-Type": "multipart/form-data",
-            },
-        });
-
-        // Store member ID from response
-        const memberId = response.data.member_id;
-        const isRenewal = response.data.is_renewal;
-        const fallbackToNew = response.data.fallback_to_new;
-        
-        setSuccessData({ 
-            memberId, 
-            isRenewal,
-            fallbackToNew,
-            message: response.data.message 
-        });
-        setShowSuccess(true);
-        
-        // Don't reset form immediately, wait for modal close
-
-    } catch (error) {
-        console.error("Registration error:", error);
-        let errorMessage = "Failed to submit registration. Please try again.";
-
-        if (error.response?.data?.errors) {
-            const errors = error.response.data.errors;
-            errorMessage = Object.values(errors).flat().join(", ");
-        } else if (error.response?.data?.message) {
-            errorMessage = error.response.data.message;
-        } else if (error.response?.data?.duplicate) {
-            errorMessage = error.response.data.message || "Duplicate submission detected. Please check your email for confirmation.";
-        } else if (error.code === 'ERR_NETWORK') {
-            errorMessage = "Network error. Please check your internet connection and try again.";
+      Object.keys(formData).forEach((key) => {
+        if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
+          submitData.append(key, formData[key]);
+        } else if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
+          if (key === "declaration") {
+            submitData.append(key, formData[key] ? "1" : "0");
+          } else {
+            submitData.append(key, formData[key]);
+          }
         }
+      });
 
-        setMessage({
-            type: "error",
-            text: errorMessage,
-        });
-        
-        setIsSubmitting(false);
-        setLoading(false);
+      const response = await axiosInstance.post("/registrations", submitData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      const memberId = response.data.member_id;
+      const isRenewal = response.data.is_renewal;
+      const fallbackToNew = response.data.fallback_to_new;
+      
+      setSuccessData({ 
+        memberId, 
+        isRenewal,
+        fallbackToNew,
+        message: response.data.message 
+      });
+      setShowSuccess(true);
+      
+    } catch (error) {
+      console.error("Registration error:", error);
+      
+      // Parse and show error modal
+      const parsedError = parseErrorMessage(error);
+      setErrorData(parsedError);
+      setShowError(true);
+      
+      setIsSubmitting(false);
+      setLoading(false);
     }
-};
+  };
 
-
-      // End Code for store member_id on renewal for first time feel form because its first year to online registration
-
-  //   const handleSubmit = async (e) => {
-  //   e.preventDefault();
-    
-  //   if (isSubmitting) {
-  //     setMessage({
-  //       type: "warning",
-  //       text: "Please wait, your submission is already being processed..."
-  //     });
-  //     return;
-  //   }
-    
-  //   if (!validateStep()) {
-  //     setMessage({
-  //       type: "error",
-  //       text: "Please fill in all required fields.",
-  //     });
-  //     return;
-  //   }
-
-  //   if (!formData.declaration) {
-  //     setMessage({
-  //       type: "error",
-  //       text: "You must accept the declaration to proceed.",
-  //     });
-  //     return;
-  //   }
-
-  //   setIsSubmitting(true);
-  //   setLoading(true);
-  //   setMessage({ type: "", text: "" });
-
-  //   try {
-  //     const submitData = new FormData();
-
-  //     Object.keys(formData).forEach((key) => {
-  //       if ((key === "applicant_photo" || key === "visiting_card" || key === "payment_screenshot") && formData[key]) {
-  //         submitData.append(key, formData[key]);
-  //       } else if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
-  //         if (key === "declaration") {
-  //           submitData.append(key, formData[key] ? "1" : "0");
-  //         } else {
-  //           submitData.append(key, formData[key]);
-  //         }
-  //       }
-  //     });
-
-  //     const response = await axiosInstance.post("/registrations", submitData, {
-  //       headers: {
-  //         "Content-Type": "multipart/form-data",
-  //       },
-  //     });
-
-  //     // Store member ID from response
-  //     const memberId = response.data.member_id;
-  //     const isRenewal = response.data.is_renewal;
-      
-  //     setSuccessData({ memberId, isRenewal });
-  //     setShowSuccess(true);
-      
-  //     // Don't reset form immediately, wait for modal close
-  //     // resetForm() will be called in handleCloseSuccess
-
-  //   } catch (error) {
-  //     console.error("Registration error:", error);
-  //     let errorMessage = "Failed to submit registration. Please try again.";
-
-  //     if (error.response?.data?.errors) {
-  //       const errors = error.response.data.errors;
-  //       errorMessage = Object.values(errors).flat().join(", ");
-  //     } else if (error.response?.data?.message) {
-  //       errorMessage = error.response.data.message;
-  //     } else if (error.response?.data?.duplicate) {
-  //       errorMessage = error.response.data.message || "Duplicate submission detected. Please check your email for confirmation.";
-  //     } else if (error.code === 'ERR_NETWORK') {
-  //       errorMessage = "Network error. Please check your internet connection and try again.";
-  //     }
-
-  //     setMessage({
-  //       type: "error",
-  //       text: errorMessage,
-  //     });
-      
-  //     setIsSubmitting(false);
-  //     setLoading(false);
-  //   }
-  // };
-
-      //  Code for store member_id on renewal for first time feel form because its first year to online registration
-
-  // Success Modal Component - Updated for fallback scenario
-const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) => (
+  // Error Modal Component
+  const ErrorModal = ({ title, message, details, existingRecord, onClose }) => (
     <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
-        onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+      onClick={onClose}
     >
-        <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.8, opacity: 0 }}
-            transition={{ type: "spring", damping: 20, stiffness: 300 }}
-            className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.8, opacity: 0 }}
+        transition={{ type: "spring", damping: 20, stiffness: 300 }}
+        className="bg-white rounded-xl p-8 max-w-lg w-full mx-4 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
         >
-            <button
-                onClick={onClose}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+          <X className="h-6 w-6" />
+        </button>
+
+        <div className="text-center">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+            className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-red-100 mb-6"
+          >
+            <AlertCircle className="h-12 w-12 text-red-600" />
+          </motion.div>
+          
+          <motion.h2
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-2xl font-bold text-gray-900 mb-3"
+          >
+            {title}
+          </motion.h2>
+          
+          <motion.p
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.35 }}
+            className="text-gray-600 mb-6"
+          >
+            {message}
+          </motion.p>
+
+          {existingRecord && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left"
             >
-                <X className="h-6 w-6" />
-            </button>
+              <h3 className="font-semibold text-yellow-800 mb-2 flex items-center">
+                <AlertTriangle className="h-5 w-5 mr-2" />
+                Existing Record Found
+              </h3>
+              <div className="space-y-1 text-sm text-yellow-700">
+                <p><span className="font-medium">Member ID:</span> {existingRecord.member_id}</p>
+                <p><span className="font-medium">Registration Type:</span> {existingRecord.registration_type_display || existingRecord.registration_type}</p>
+                <p><span className="font-medium">Submission Date:</span> {new Date(existingRecord.created_at).toLocaleString()}</p>
+                <p><span className="font-medium">Status:</span> {existingRecord.payment_verified ? '✓ Verified' : '⏳ Pending Verification'}</p>
+              </div>
+            </motion.div>
+          )}
 
-            <div className="text-center">
-                <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                    className={`mx-auto flex items-center justify-center h-20 w-20 rounded-full mb-6 ${
-                        fallbackToNew ? 'bg-yellow-100' : 'bg-green-100'
-                    }`}
-                >
-                    <CheckCircle className={`h-12 w-12 ${
-                        fallbackToNew ? 'text-yellow-600' : 'text-green-600'
-                    }`} />
-                </motion.div>
-                
-                <motion.h2
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.3 }}
-                    className="text-2xl font-bold text-gray-900 mb-3"
-                >
-                    {message || (isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!")}
-                </motion.h2>
-                
-                
-                
-                {memberId && (
-                    <motion.div
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.4 }}
-                        className={`border rounded-lg p-4 mb-6 ${
-                            fallbackToNew ? 'bg-yellow-50 border-yellow-200' : 'bg-blue-50 border-blue-200'
-                        }`}
-                    >
-                        <p className={`text-sm mb-1 ${
-                            fallbackToNew ? 'text-yellow-600' : 'text-blue-600'
-                        }`}>
-                            Your Member ID
-                        </p>
-                        <p className={`text-2xl font-bold font-mono ${
-                            fallbackToNew ? 'text-yellow-800' : 'text-blue-800'
-                        }`}>
-                            {memberId}
-                        </p>
-                        <p className={`text-xs mt-2 ${
-                            fallbackToNew ? 'text-yellow-600' : 'text-blue-600'
-                        }`}>
-                            Please save this ID for future reference
-                        </p>
-                    </motion.div>
-                )}
-                
-                <motion.p
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.5 }}
-                    className="text-gray-600 mb-6"
-                >
-                    {fallbackToNew 
-                        ? "Your new membership application has been submitted successfully. We will review your details and get back to you soon."
-                        : `Thank you for ${isRenewal ? "renewing your membership" : "registering"}. 
-                        Your application has been submitted successfully. 
-                        We will review your details and get back to you soon.`
-                    }
-                </motion.p>
-                
-                <motion.button
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.6 }}
-                    onClick={onClose}
-                    className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
-                >
-                    Close
-                </motion.button>
-            </div>
-        </motion.div>
+          {details.length > 0 && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.45 }}
+              className="bg-gray-50 rounded-lg p-4 mb-6 text-left"
+            >
+              <h3 className="font-semibold text-gray-800 mb-2 flex items-center">
+                <Info className="h-5 w-5 mr-2 text-blue-500" />
+                Error Details
+              </h3>
+              <ul className="space-y-2 text-sm text-gray-600">
+                {details.map((detail, index) => (
+                  <li key={index} className="flex items-start">
+                    <span className="text-red-500 mr-2">•</span>
+                    <span>{detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-left"
+          >
+            <p className="text-sm text-blue-800">
+              <span className="font-semibold">Need help?</span> If you believe this is an error or need assistance, please contact our support team at <a href="mailto:support@masma.in" className="underline">support@masma.in</a>
+            </p>
+          </motion.div>
+          
+          <motion.button
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            onClick={onClose}
+            className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
+          >
+            Close
+          </motion.button>
+        </div>
+      </motion.div>
     </motion.div>
-);
-      // End Code for store member_id on renewal for first time feel form because its first year to online registration
+  );
 
+  // Success Modal Component
+  const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) => (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.8, opacity: 0 }}
+        transition={{ type: "spring", damping: 20, stiffness: 300 }}
+        className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <X className="h-6 w-6" />
+        </button>
 
-  // Success Modal Component - Defined outside to prevent re-renders
-  // const SuccessModal = ({ memberId, isRenewal, onClose }) => (
-  //   <motion.div
-  //     initial={{ opacity: 0 }}
-  //     animate={{ opacity: 1 }}
-  //     exit={{ opacity: 0 }}
-  //     className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
-  //     onClick={onClose}
-  //   >
-  //     <motion.div
-  //       initial={{ scale: 0.8, opacity: 0 }}
-  //       animate={{ scale: 1, opacity: 1 }}
-  //       exit={{ scale: 0.8, opacity: 0 }}
-  //       transition={{ type: "spring", damping: 20, stiffness: 300 }}
-  //       className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl relative"
-  //       onClick={(e) => e.stopPropagation()}
-  //     >
-  //       <button
-  //         onClick={onClose}
-  //         className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-  //       >
-  //         <X className="h-6 w-6" />
-  //       </button>
-
-  //       <div className="text-center">
-  //         <motion.div
-  //           initial={{ scale: 0 }}
-  //           animate={{ scale: 1 }}
-  //           transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-  //           className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6"
-  //         >
-  //           <CheckCircle className="h-12 w-12 text-green-600" />
-  //         </motion.div>
+        <div className="text-center">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+            className={`mx-auto flex items-center justify-center h-20 w-20 rounded-full mb-6 ${
+              fallbackToNew ? 'bg-yellow-100' : 'bg-green-100'
+            }`}
+          >
+            <CheckCircle className={`h-12 w-12 ${
+              fallbackToNew ? 'text-yellow-600' : 'text-green-600'
+            }`} />
+          </motion.div>
           
-  //         <motion.h2
-  //           initial={{ y: 20, opacity: 0 }}
-  //           animate={{ y: 0, opacity: 1 }}
-  //           transition={{ delay: 0.3 }}
-  //           className="text-2xl font-bold text-gray-900 mb-3"
-  //         >
-  //           {isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!"}
-  //         </motion.h2>
+          <motion.h2
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-2xl font-bold text-gray-900 mb-3"
+          >
+            {message || (isRenewal ? "Membership Renewed Successfully!" : "Registration Successful!")}
+          </motion.h2>
           
-  //         {memberId && (
-  //           <motion.div
-  //             initial={{ y: 20, opacity: 0 }}
-  //             animate={{ y: 0, opacity: 1 }}
-  //             transition={{ delay: 0.4 }}
-  //             className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6"
-  //           >
-  //             <p className="text-sm text-blue-600 mb-1">Your Member ID</p>
-  //             <p className="text-2xl font-bold text-blue-800 font-mono">{memberId}</p>
-  //             <p className="text-xs text-blue-600 mt-2">
-  //               Please save this ID for future reference
-  //             </p>
-  //           </motion.div>
-  //         )}
+          {memberId && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className={`border rounded-lg p-4 mb-6 ${
+                fallbackToNew ? 'bg-yellow-50 border-yellow-200' : 'bg-blue-50 border-blue-200'
+              }`}
+            >
+              <p className={`text-sm mb-1 ${
+                fallbackToNew ? 'text-yellow-600' : 'text-blue-600'
+              }`}>
+                Your Member ID
+              </p>
+              <p className={`text-2xl font-bold font-mono ${
+                fallbackToNew ? 'text-yellow-800' : 'text-blue-800'
+              }`}>
+                {memberId}
+              </p>
+              <p className={`text-xs mt-2 ${
+                fallbackToNew ? 'text-yellow-600' : 'text-blue-600'
+              }`}>
+                Please save this ID for future reference
+              </p>
+            </motion.div>
+          )}
           
-  //         <motion.p
-  //           initial={{ y: 20, opacity: 0 }}
-  //           animate={{ y: 0, opacity: 1 }}
-  //           transition={{ delay: 0.5 }}
-  //           className="text-gray-600 mb-6"
-  //         >
-  //           Thank you for {isRenewal ? "renewing your membership" : "registering"}. 
-  //           Your application has been submitted successfully. 
-  //           We will review your details and get back to you soon.
-  //         </motion.p>
+          <motion.p
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="text-gray-600 mb-6"
+          >
+            {fallbackToNew 
+              ? "Your new membership application has been submitted successfully. We will review your details and get back to you soon."
+              : `Thank you for ${isRenewal ? "renewing your membership" : "registering"}. 
+              Your application has been submitted successfully. 
+              We will review your details and get back to you soon.`
+            }
+          </motion.p>
           
-  //         <motion.button
-  //           initial={{ y: 20, opacity: 0 }}
-  //           animate={{ y: 0, opacity: 1 }}
-  //           transition={{ delay: 0.6 }}
-  //           onClick={onClose}
-  //           className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
-  //         >
-  //           Close
-  //         </motion.button>
-  //       </div>
-  //     </motion.div>
-  //   </motion.div>
-  // );
+          <motion.button
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            onClick={onClose}
+            className="w-full px-6 py-3 bg-[#005aa8] text-white font-semibold rounded-lg hover:bg-[#004080] transition duration-300 focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:ring-offset-2"
+          >
+            Close
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
 
   // Step Indicator Component
   const StepIndicator = () => (
@@ -743,6 +767,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="applicant_name"
+                  placeholder="Your Name"
                   value={formData.applicant_name}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -822,6 +847,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="tel"
                   name="mobile"
+                  placeholder="Mobile Number"
                   value={formData.mobile}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -835,6 +861,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="tel"
                   name="phone"
+                  placeholder="Phone Number"
                   value={formData.phone}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -847,6 +874,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="tel"
                   name="whatsapp_no"
+                  placeholder="Whatsapp Number"
                   value={formData.whatsapp_no}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -859,6 +887,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="email"
                   name="office_email"
+                  placeholder="Office Email"
                   value={formData.office_email}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -889,6 +918,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="city"
+                  placeholder="City"
                   value={formData.city}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -901,6 +931,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="town"
+                  placeholder="Town"
                   value={formData.town}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -913,6 +944,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="village"
+                  placeholder="Village"
                   value={formData.village}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -942,6 +974,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="organization"
+                  placeholder="Organization"
                   value={formData.organization}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -954,6 +987,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="url"
                   name="website"
+                  placeholder="https://yourweb.in"
                   value={formData.website}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -1014,6 +1048,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="pan_number"
+                  placeholder="Pan Number"
                   value={formData.pan_number}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -1026,6 +1061,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="gst_number"
+                  placeholder="GST Number"
                   value={formData.gst_number}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -1037,6 +1073,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 </label>
                 <textarea
                   name="about_service"
+                  placeholder="About Service"
                   value={formData.about_service}
                   onChange={handleInputChange}
                   rows={4}
@@ -1067,6 +1104,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="membership_reference_1"
+                  placeholder="Reference"
                   value={formData.membership_reference_1}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -1080,6 +1118,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="membership_reference_2"
+                  placeholder="Reference"
                   value={formData.membership_reference_2}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -1124,13 +1163,12 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                   ))}
                 </select>
                 
-                {/* Show tip only for selected registration type */}
                 {formData.registration_type && 
                   (() => {
                     const selectedType = registrationTypes.find(rt => rt.type === formData.registration_type);
                     return selectedType?.tip && (
                       <div className="mt-2 text-sm text-blue-600 bg-blue-50 p-2 rounded">
-                         Tip: {selectedType.tip}
+                        Tip: {selectedType.tip}
                       </div>
                     );
                   })()
@@ -1144,12 +1182,12 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="registration_amount"
+                  placeholder="Registration Amount"
                   value={formData.registration_amount}
                   readOnly
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 font-semibold text-[#005aa8]"
                 />
               </div>
-              
             </div>
 
             {/* Bank Details */}
@@ -1164,14 +1202,10 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
               </div>
             </div>
 
-            {/* QR Code Placeholder */}
+            {/* QR Code */}
             <div className="border-2 border-dashed border-gray-300 p-4 rounded-lg text-center">
               <h5 className="font-semibold text-gray-700 mb-2">Scan QR Code to Pay</h5>
-              {/* <div className="bg-gray-100 h-32 w-32 mx-auto rounded-lg flex items-center justify-center">
-                <Upload className="h-8 w-8 text-gray-400" />
-              </div>
-              <p className="text-xs text-gray-500 mt-2">QR Code Image Placeholder</p> */}
-              <img src={qrcode} alt="Payment QR" className="md:h-200 " />
+              <img src={qrcode} alt="Payment QR" className="mx-auto h-120 md:h-160" />
             </div>
 
             {/* Payment Mode and Details */}
@@ -1203,6 +1237,7 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
                 <input
                   type="text"
                   name="transaction_reference"
+                  placeholder="UTR/UPI/Transaction ID"
                   value={formData.transaction_reference}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#005aa8] focus:border-transparent"
@@ -1258,8 +1293,6 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
     <div className="min-h-screen bg-gray-50 py-8 pt-40 px-4 relative">
       <AnimatePresence>
         {showSuccess && (
-              //  Code for store member_id on renewal for first time feel form because its first year to online registration
-
           <SuccessModal 
             memberId={successData.memberId}
             isRenewal={successData.isRenewal}
@@ -1267,13 +1300,15 @@ const SuccessModal = ({ memberId, isRenewal, fallbackToNew, message, onClose }) 
             message={successData.message}
             onClose={handleCloseSuccess}
           />
-              // End Code for store member_id on renewal for first time feel form because its first year to online registration
-
-          // <SuccessModal 
-          //   memberId={successData.memberId}
-          //   isRenewal={successData.isRenewal}
-          //   onClose={handleCloseSuccess}
-          // />
+        )}
+        {showError && (
+          <ErrorModal 
+            title={errorData.title}
+            message={errorData.message}
+            details={errorData.details}
+            existingRecord={errorData.existingRecord}
+            onClose={handleCloseError}
+          />
         )}
       </AnimatePresence>
 
